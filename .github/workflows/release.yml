@@ -49,52 +49,31 @@ jobs:
           - platform: windows-x64
             runner: windows-2022
             os: windows
-          - platform: macos-arm64
-            runner: macos-15
-            os: macos
-          - platform: macos-x64
-            runner: macos-15-intel
-            os: macos
-          - platform: linux-x64
-            runner: ubuntu-22.04
-            os: linux
-          - platform: linux-arm64
-            runner: ubuntu-22.04-arm
-            os: linux
     defaults:
       run:
         shell: bash
     env:
       VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/.vcpkg-cache,readwrite
-      APPIMAGE_EXTRACT_AND_RUN: '1'
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           submodules: recursive
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
+        id: dependency-cache
         with:
           path: .vcpkg-cache
           key: release-deps-${{ matrix.platform }}-${{ hashFiles('vcpkg.json', 'cmake/TorchExternalFixes.cmake') }}
       - name: Prepare dependency cache
         run: mkdir -p .vcpkg-cache
-      - name: Install Linux build dependencies
-        if: matrix.os == 'linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential ninja-build cmake curl zip unzip tar pkg-config \
-            autoconf automake libtool libx11-dev libxrandr-dev libxi-dev libxinerama-dev \
-            libxcursor-dev libgl1-mesa-dev libopengl-dev libwayland-dev libxkbcommon-dev \
-            libasound2-dev libpulse-dev libudev-dev libdbus-1-dev
-      - name: Install macOS build dependencies
-        if: matrix.os == 'macos'
-        run: brew install ninja cmake
       - name: Configure Windows
-        if: matrix.os == 'windows'
         run: cmake -S . -B build -G "Visual Studio 17 2022" -T v143 -A x64 -DCMAKE_BUILD_TYPE=Release -DENABLE_VCPKG=ON
-      - name: Configure macOS and Linux
-        if: matrix.os != 'windows'
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DENABLE_VCPKG=ON
+      - name: Save compiled dependencies
+        if: steps.dependency-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .vcpkg-cache
+          key: ${{ steps.dependency-cache.outputs.cache-primary-key }}
       - name: Generate port resources (no ROM extraction)
         run: cmake --build build --config Release --target GenerateO2R --parallel 3
       - name: Build game
@@ -105,14 +84,8 @@ jobs:
             https://raw.githubusercontent.com/mdqinc/SDL_GameControllerDB/master/gamecontrollerdb.txt \
             --output build/gamecontrollerdb.txt
           cp docs/RELEASE-NOTES.md build/README-Release.md
-      - name: Package Windows and macOS
-        if: matrix.os != 'linux'
+      - name: Package Windows
         run: python .github/scripts/package_release.py --platform "${{ matrix.platform }}" --build-dir build --output-dir dist
-      - name: Package Linux AppImage
-        if: matrix.os == 'linux'
-        run: |
-          (cd build && cpack -G External)
-          python .github/scripts/package_release.py --platform "${{ matrix.platform }}" --build-dir build --output-dir dist
       - name: Keep build artifacts
         uses: actions/upload-artifact@v4
         with:

@@ -17,7 +17,7 @@ An unofficial fork of **[HarbourMasters/SpaghettiKart](https://github.com/Harbou
 
 ## Getting started
 
-Download playable builds from **[Releases](https://github.com/Ricky69Gameplays69Caballo/Mario-kart-64-5-players-Ricky-Gameplays/releases)**. Builds are provided for Windows x64, macOS Intel/Apple Silicon, and Linux x64/ARM64 when their release jobs complete. See the [release setup guide](docs/RELEASE-NOTES.md). Android APKs are not currently supported by this fork.
+Download the **Windows x64** build from **[Releases](https://github.com/Ricky69Gameplays69Caballo/Mario-kart-64-5-players-Ricky-Gameplays/releases)**. Extract the entire ZIP, then open `Spaghettify.exe`. See the [release setup guide](docs/RELEASE-NOTES.md). Downloadable releases are Windows-only for now; macOS, Linux, ARM, and Android builds are deferred.
 
 Open the PC menu with **Escape**. Under **Multiplayer → Local play**, enable **Enable 8 players**, then move right past 4P on GAME SELECT to reach 5P–8P. Enable **Enable bots in 3 to 7 player grand prix** to fill available Grand Prix slots with bots. Either multiplayer option also exposes Grand Prix in the normal 3P/4P menus.
 
