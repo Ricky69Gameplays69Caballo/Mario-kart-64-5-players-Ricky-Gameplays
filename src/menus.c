@@ -23,6 +23,7 @@
 #include <sounds.h>
 #include "spawn_players.h"
 #include "port/Game.h"
+#include "port/LocalMultiplayer.h"
 
 /** BSS **/
 s32 gIntroModelZEye;
@@ -65,10 +66,10 @@ s8 unref_D_8018EE0C; // Set to 0 but never referenced
 /** Data **/
 s32 gMenuSelection = HARBOUR_MASTERS_MENU;
 s32 gFadeModeSelection = FADE_MODE_NONE;
-s8 gCharacterSelections[4] = { MARIO, LUIGI, YOSHI, TOAD };
+s8 gCharacterSelections[8] = { MARIO, LUIGI, YOSHI, TOAD, DK, WARIO, PEACH, BOWSER };
 
 // The current row selected in the mode column for each player indexed
-// 0-1 1p / 0-2 2p´/ 0-1 3p / 0-1 4p
+// 0-1 for 1P; 0-2 (Grand Prix, Versus, Battle) for 2P, 3P, and 4P.
 s8 gGameModeMenuColumn[NUM_ROWS_GAME_MODE_MENU] = { 0, 0, 0, 0 };
 
 // For Grand Prix and Versus, this will be the CC mode selected. For Time Trials, it will
@@ -101,31 +102,31 @@ const s8 sScreenModePlayerTable[] = { SCREEN_MODE_1P, SCREEN_MODE_2P_SPLITSCREEN
 const s8 sScreenModePlayerCount[] = { 1, 2, 2, 3, 4 };
 
 // Set indexed slots numbers for one-two-three-four mode selection
-const s8 gPlayerModeSelection[] = { 1, 2, 1, 1 };
+s8 gPlayerModeSelection[] = { 1, 2, 2, 2 };
 
 // Limit for each index column in one-two-three-four mode selection
-const s8 sGameModePlayerColumnDefault[][3] = {
+s8 sGameModePlayerColumnDefault[][3] = {
     { 2, 1, 0 }, // 1p (GP options, TT options, ...)
     { 2, 2, 0 }, // 2p (GP options, VS options, Battle)
-    { 2, 0, 0 }, // 3p (VS options, Battle, ...)
-    { 2, 0, 0 }, // 4p (VS options, Battle, ...)
+    { 2, 2, 0 }, // 3p (GP options, VS options, Battle)
+    { 2, 2, 0 }, // 4p (GP options, VS options, Battle)
 };
 
 // Limit for each index column in one-two-three-four mode selection
 // for extra mode (mirror mode), hence the extra value (3 instead of 2)
-const s8 sGameModePlayerColumnExtra[][3] = {
+s8 sGameModePlayerColumnExtra[][3] = {
     { 3, 1, 0 }, // 1p (GP options, TT options, ...)
     { 3, 3, 0 }, // 2p (GP options, VS options, Battle)
-    { 3, 0, 0 }, // 3p (VS options, Battle, ...)
-    { 3, 0, 0 }, // 4p (VS options, Battle, ...)
+    { 3, 3, 0 }, // 3p (GP options, VS options, Battle)
+    { 3, 3, 0 }, // 4p (GP options, VS options, Battle)
 };
 
 // Modes to select in one-two-three-four mode selection
-const s32 gGameModePlayerSelection[][3] = {
+s32 gGameModePlayerSelection[][3] = {
     { GRAND_PRIX, TIME_TRIALS, 0x00000000 }, // 1p game modes
     { GRAND_PRIX, VERSUS, BATTLE },          // 2p game modes
-    { VERSUS, BATTLE, 0x00000000 },          // 3p game modes
-    { VERSUS, BATTLE, 0x00000000 },          // 4p game modes
+    { GRAND_PRIX, VERSUS, BATTLE },          // 3p game modes
+    { GRAND_PRIX, VERSUS, BATTLE },          // 4p game modes
 };
 
 // Map from character grid position id to character id
@@ -163,6 +164,10 @@ const union GameModePack sSoundMenuPack = { { SOUND_STEREO, SOUND_HEADPHONES, SO
 void update_menus(void) {
     u16 controllerIdx;
 
+    MultiplayerOptions_UpdateMenus();
+    // Lobby inputs select characters; the underlying game menu must wait.
+    if (LocalMP_IsLobbyOpen()) return;
+    if (LocalMP_GameMenuTick()) return;
     if (gFadeModeSelection == FADE_MODE_NONE) {
         for (controllerIdx = 0; controllerIdx < 4; controllerIdx++) {
             // Debug, quick jump through menus using the start button.

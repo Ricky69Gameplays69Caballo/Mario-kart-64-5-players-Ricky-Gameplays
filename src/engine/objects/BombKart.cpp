@@ -1,3 +1,4 @@
+#include "port/LocalMultiplayer.h"
 #include <libultraship.h>
 #include "engine/objects/Object.h"
 #include "BombKart.h"
@@ -155,7 +156,7 @@ void OBombKart::Tick() {
                 }
             } else {
 
-                for (size_t i = 0; i < gPlayerCount; i++) {
+                for (size_t i = 0; i < LocalMP_RacerCount(); i++) {
                     player = &gPlayers[i];
                     if (!(player->effects & 0x80000000)) {
                         temp_f0 = newPos[0] - player->pos[0];

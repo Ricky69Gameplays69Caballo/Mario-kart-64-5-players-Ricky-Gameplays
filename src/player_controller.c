@@ -1,3 +1,4 @@
+#include "port/LocalMultiplayer.h"
 #include <libultraship.h>
 #include <macros.h>
 #include <defines.h>
@@ -306,7 +307,15 @@ void func_80028864(Player* player, Camera* camera, s8 playerId, s8 screenId) {
     u16 sp1E;
 
     if (!(player->type & PLAYER_START_SEQUENCE)) {
-        switch (gActiveScreenMode) {
+        if (LocalMP_IsActive()) {
+            sp1E = 0;
+            for (s32 view = 0; view < LocalMP_Count(); view++) {
+                if (check_player_camera_collision_rubberbanding(player, &cameras[view], (f32) D_8016557C, 0.0f)) {
+                    sp1E = 1;
+                    break;
+                }
+            }
+        } else switch (gActiveScreenMode) {
             case SCREEN_MODE_1P:
                 sp1E = check_player_camera_collision_rubberbanding(player, camera1, (f32) D_8016557C, 0.0f);
                 break;
@@ -424,7 +433,11 @@ void func_80028E70(Player* player, Camera* camera, s8 playerId, s8 screenId) {
                         func_80028D3C(player, camera, playerId, screenId);
                         break;
                     default:
-                        func_80028864(player, camera, playerId, screenId);
+                      if (LocalMP_IsActive() && !(player->type & PLAYER_CPU)) {
+                          func_80028C44(player, camera, playerId, screenId);
+                      } else {
+                          func_80028864(player, camera, playerId, screenId);
+                      }
                         break;
                 }
                 break;
@@ -433,20 +446,20 @@ void func_80028E70(Player* player, Camera* camera, s8 playerId, s8 screenId) {
 }
 
 void func_80028F70(void) {
+    if (LocalMP_IsActive()) {
+        gMatrixEffectCount = 0;
+        for (s8 i = 0; i < LocalMP_RacerCount(); i++) {
+            if (!LocalMP_IsFinished(i)) func_80028E70(&gPlayers[i], i < LocalMP_Count() ? &cameras[i] : camera1, i, 0);
+        }
+        return;
+    }
     // ClearEffectsMatrixPool();
     gMatrixEffectCount = 0;
 
-    switch(gActiveScreenMode) {
-        default:
-            for (size_t i = 0; i < NUM_PLAYERS; i++) {
-                func_80028E70(&gPlayers[i], camera1, i, 0);
-            }
-            break;
-        case SCREEN_MODE_3P_4P_SPLITSCREEN:
-            for (size_t i = 0; i < 4; i++) {
-                func_80028E70(&gPlayers[i], camera1, i, 0);
-            }
-            break;
+    const size_t racerCount = (gActiveScreenMode == SCREEN_MODE_3P_4P_SPLITSCREEN &&
+                               gModeSelection != GRAND_PRIX) ? 4 : NUM_PLAYERS;
+    for (size_t i = 0; i < racerCount; i++) {
+        func_80028E70(&gPlayers[i], camera1, i, 0);
     }
 }
 
@@ -859,7 +872,7 @@ void func_8002A704(Player* player, s8 arg1) {
     player->triggers &= ~START_BOOST_TRIGGER;
     if (((player->type & PLAYER_HUMAN) == PLAYER_HUMAN) &&
         ((player->type & PLAYER_INVISIBLE_OR_BOMB) != PLAYER_INVISIBLE_OR_BOMB)) {
-        func_800C90F4(0U, (player->characterId * 0x10) + 0x29008001);
+        func_800C90F4(LocalMP_IsActive() ? arg1 : 0U, (player->characterId * 0x10) + 0x29008001);
         func_800C9060(arg1, 0x1900A40BU);
     }
     player->boostTimer = 0x0050;
@@ -4406,6 +4419,12 @@ void handle_a_press_for_player_during_race(Player* player, struct Controller* co
 }
 
 void handle_a_press_for_all_players_during_race(void) {
+    if (LocalMP_IsActive()) {
+        for (s32 i = 0; i < LocalMP_Count(); i++) {
+            if (!LocalMP_IsFinished(i)) handle_a_press_for_player_during_race(&gPlayers[i], &gControllers[i], i);
+        }
+        return;
+    }
     u16 temp_v0_3;
     u16 temp_v0_4;
     u16 temp_v0_5;

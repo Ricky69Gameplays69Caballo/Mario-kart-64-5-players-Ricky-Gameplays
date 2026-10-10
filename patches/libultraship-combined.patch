@@ -1,0 +1,84 @@
+diff --git a/include/libultraship/libultra/os.h b/include/libultraship/libultra/os.h
+index bd11553..c2ffac9 100644
+--- a/include/libultraship/libultra/os.h
++++ b/include/libultraship/libultra/os.h
+@@ -11,7 +11,7 @@
+ #include "vi.h"
+ 
+ #ifndef _HW_VERSION_1
+-#define MAXCONTROLLERS 4
++#define MAXCONTROLLERS 8
+ #else
+ #define MAXCONTROLLERS 6
+ #endif
+diff --git a/include/libultraship/window/gui/InputEditorWindow.h b/include/libultraship/window/gui/InputEditorWindow.h
+index 9156fd0..cf22179 100644
+--- a/include/libultraship/window/gui/InputEditorWindow.h
++++ b/include/libultraship/window/gui/InputEditorWindow.h
+@@ -7,6 +7,7 @@
+ #include <string>
+ #include <vector>
+ #include <set>
++#include <functional>
+ #include "ship/controller/controldevice/controller/Controller.h"
+ 
+ namespace LUS {
+@@ -55,6 +56,12 @@ class InputEditorWindow : public Ship::GuiWindow {
+      */
+     bool TestingRumble();
+ 
++    // Optional application UI above each port's bindings. Return true while
++    // its popup is open so typing a profile name cannot reach the game.
++    void SetPortProfilesDrawCallback(std::function<bool(uint8_t)> callback) {
++        mPortProfilesDrawCallback = std::move(callback);
++    }
++
+   protected:
+     /** @brief Registers button bitmasks and performs initial population of mapping tables. */
+     void InitElement() override;
+@@ -66,6 +73,7 @@ class InputEditorWindow : public Ship::GuiWindow {
+     void UpdateElement() override;
+ 
+   private:
++    std::function<bool(uint8_t)> mPortProfilesDrawCallback;
+     /**
+      * @brief Draws a single stick-direction mapping line (e.g. "Stick Up").
+      * @param axisDirectionName Human-readable axis/direction label.
+diff --git a/src/libultraship/window/gui/InputEditorWindow.cpp b/src/libultraship/window/gui/InputEditorWindow.cpp
+index 54948e1..bf63154 100644
+--- a/src/libultraship/window/gui/InputEditorWindow.cpp
++++ b/src/libultraship/window/gui/InputEditorWindow.cpp
+@@ -1251,6 +1251,11 @@ void InputEditorWindow::DrawClearAllButton(uint8_t portIndex) {
+ 
+ void InputEditorWindow::DrawPortTab(uint8_t portIndex) {
+     if (ImGui::BeginTabItem(StringHelper::Sprintf("Port %d###port%d", portIndex + 1, portIndex).c_str())) {
++        if (mPortProfilesDrawCallback) {
++            ImGui::BeginDisabled(TestingRumble());
++            if (mPortProfilesDrawCallback(portIndex)) mInputEditorPopupOpen = true;
++            ImGui::EndDisabled();
++        }
+         DrawClearAllButton(portIndex);
+         DrawSetDefaultsButton(portIndex);
+         DrawDeviceToggles(portIndex);
+@@ -1414,7 +1419,7 @@ void InputEditorWindow::DrawSetDefaultsButton(uint8_t portIndex) {
+ 
+ void InputEditorWindow::DrawElement() {
+     ImGui::BeginTabBar("##ControllerConfigPortTabs");
+-    for (uint8_t i = 0; i < 4; i++) {
++    for (uint8_t i = 0; i < 8; i++) {
+         DrawPortTab(i);
+     }
+     ImGui::EndTabBar();
+diff --git a/src/ship/controller/physicaldevice/ConnectedPhysicalDeviceManager.cpp b/src/ship/controller/physicaldevice/ConnectedPhysicalDeviceManager.cpp
+index 7f0397e..1515199 100644
+--- a/src/ship/controller/physicaldevice/ConnectedPhysicalDeviceManager.cpp
++++ b/src/ship/controller/physicaldevice/ConnectedPhysicalDeviceManager.cpp
+@@ -100,7 +100,7 @@ void ConnectedPhysicalDeviceManager::RefreshConnectedSDLGamepads() {
+         mConnectedSDLGamepads[instanceId] = gamepad;
+         mConnectedSDLGamepadNames[instanceId] = gamepadName;
+ 
+-        for (uint8_t port = 1; port < 4; port++) {
++        for (uint8_t port = 1; port < 8; port++) {
+             mIgnoredInstanceIds[port].insert(instanceId);
+         }
+     }

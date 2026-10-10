@@ -1,3 +1,4 @@
+#include "port/LocalMultiplayer.h"
 /**
  * @file code_80057C60.c
  * @warning there are too many variables here
@@ -229,10 +230,10 @@ Mtx D_80183D60;
  * this variable, but it appears to go unreferenced
  **/
 s32 D_80183DA0;
-f32 D_80183DA8[4];
+f32 D_80183DA8[8];
 //! Lakitu?
-s32 gIndexLakituList[4];
-f32 D_80183DC8[4];
+s32 gIndexLakituList[8];
+f32 D_80183DC8[8];
 //! Indexes for the objects associated with the Bomb Karts
 s32 gIndexObjectBombKart[NUM_BOMB_KARTS_MAX];
 UNUSED s32 D_80183DF8[16];
@@ -281,7 +282,7 @@ s32 indexObjectList2[32];
  * I'm also not certain about its dimensions
  * I think the entires in this array are way over-sized
  */
-const char* gLakituTextureBuffer[4][2];
+const char* gLakituTextureBuffer[8][2];
 /**
  * Boos in Banshee Boardwalk
  * Spawners for the 4 small fire breaths inside Bowser's Castle
@@ -294,7 +295,7 @@ const char** gLakituTexturePtr;
  */
 s32 indexObjectList4[32];
 //! Array of (4) Collisions?
-struct Collision D_8018C0B0[4];
+struct Collision D_8018C0B0[8];
 /**
  * List of object list indices used for:
  *   Moles in Moo Moo Farm
@@ -331,7 +332,7 @@ s32 gObjectParticle4[gObjectParticle4_SIZE];
  * trees when you bonk into them
  */
 s32 gLeafParticle[gLeafParticle_SIZE];
-hud_player playerHUD[4];
+hud_player playerHUD[8];
 /**
  * List of object list indices used by the clouds and stars in some stages
  * Also used for snowflakes like gObjectParticle1? Not sure what's up with that
@@ -360,13 +361,13 @@ s16 gGPCurrentRaceCharacterIdByRank[8];
 s16 D_8018CF90;
 s16 D_8018CF98[8];
 s16 D_8018CFA8;
-s8 D_8018CFAC[4];
+s8 D_8018CFAC[8];
 s16 D_8018CFB0;
-s8 D_8018CFB4[4];
+s8 D_8018CFB4[8];
 s16 D_8018CFB8;
-s8 D_8018CFBC[4];
+s8 D_8018CFBC[8];
 s16 D_8018CFC0;
-s8 D_8018CFC4[4];
+s8 D_8018CFC4[8];
 s16 D_8018CFC8;
 f32 D_8018CFCC;
 s16 D_8018CFD0;
@@ -1052,7 +1053,7 @@ void func_80059AC8(void) {
     if ((gIsGamePaused == false) && (Editor_IsPaused() == false)) {
         func_8008C1D8(&D_80165678);
         gRaceFrameCounter++;
-        for (i = 0; i < gPlayerCount; i++) {
+        for (i = 0; i < LocalMP_Count(); i++) {
             D_8018CF68[i] = func_8008A890(&camera1[i]);
         }
 
@@ -1060,7 +1061,9 @@ void func_80059AC8(void) {
             func_800892E0(i);
         }
 
-        switch (gScreenModeSelection) {
+        if (LocalMP_IsActive()) {
+            for (s32 i = 0; i < LocalMP_Count(); i++) func_80059A88(i);
+        } else switch (gScreenModeSelection) {
             case SCREEN_MODE_1P:
                 if (gGamestate != CREDITS_SEQUENCE) {
                     func_80059A88(PLAYER_ONE);
@@ -1107,6 +1110,14 @@ void func_80059C50(void) {
 }
 
 void func_80059D00(void) {
+    if (LocalMP_IsActive()) {
+        func_8005A99C(); func_8005A3C0(); func_8005A380();
+        for (s32 i = 0; i < LocalMP_Count(); i++) {
+            func_80059820(i); func_8005D0FC(i);
+        }
+        CM_TickObjects(); CM_TickParticles();
+        return;
+    }
 
     func_8005A99C();
     func_8005A3C0();
@@ -1295,6 +1306,9 @@ void func_8005A380(void) {
 }
 
 void func_8005A3C0(void) {
+    // Expanded views own separate C-right map/progress selections. Do not also
+    // toggle the legacy shared four-player HUD from controller ports 1-4.
+    if (LocalMP_IsActive() && LocalMP_Count() > 4) return;
     bool b = false;
     if ((gGamestate != ENDING) && (gGamestate != CREDITS_SEQUENCE) && !D_8018D204) {
         switch (gPlayerCountSelection1) {
@@ -2360,7 +2374,7 @@ void func_8005CB60(s32 playerId, s32 lapCount) {
                     playerHUD[playerId].lap3CompletionTimeX = 0x0280;
                     playerHUD[playerId].totalTimeX = 0x0320;
                     D_8016587C = (s32) 1;
-                    if (D_8018D20C == 0) {
+                    if (D_8018D20C == 0 || LocalMP_IsActive()) {
                         CM_ActivateFinishLakitu(playerId); // func_80079054(playerId);
                         D_8018D20C = 1;
                         if (gPlayerCount == (s8) 1) {
@@ -2419,6 +2433,14 @@ void func_8005CB60(s32 playerId, s32 lapCount) {
 }
 
 void func_8005D0FC(s32 playerId) {
+    if (LocalMP_IsActive()) {
+        // The original dispatch has only four cases. Each expanded human needs
+        // lap timing, second/final-lap Lakitu, and a finish flag of their own.
+        if (gModeSelection != BATTLE && playerId >= 0 && playerId < LocalMP_Count()) {
+            func_8005CB60(playerId, gLapCountByPlayerId[playerId]);
+        }
+        return;
+    }
     if (gModeSelection != BATTLE) {
         switch (playerId) { /* irregular */
             case PLAYER_ONE:
@@ -6523,6 +6545,10 @@ void func_8006DD3C(Player* player, s8 playerId, s8 screenId) {
 }
 
 void func_8006E058(void) {
+    if (LocalMP_IsActive()) {
+        for (s8 i = 0; i < LocalMP_RacerCount(); i++) func_8006E420(&gPlayers[i], i, 0);
+        return;
+    }
     switch (gActiveScreenMode) {
         case SCREEN_MODE_1P:
             switch (gModeSelection) {
@@ -6601,7 +6627,11 @@ void func_8006E058(void) {
 
             break;
         case SCREEN_MODE_3P_4P_SPLITSCREEN:
-            if ((VERSUS == gModeSelection) || (BATTLE == gModeSelection)) {
+            if (gModeSelection == GRAND_PRIX) {
+                for (s8 racer = 0; racer < NUM_PLAYERS; racer++) {
+                    func_8006E420(&gPlayers[racer], racer, 0);
+                }
+            } else if ((VERSUS == gModeSelection) || (BATTLE == gModeSelection)) {
                 func_8006E420(gPlayerOne, 0, 0);
                 func_8006E420(gPlayerTwo, 1, 0);
                 func_8006E420(gPlayerThree, 2, 0);

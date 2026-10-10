@@ -1,3 +1,4 @@
+#include "port/LocalMultiplayer.h"
 #include <libultraship.h>
 #include <typeinfo>
 
@@ -243,7 +244,7 @@ void CM_BombKartsWaypoint(s32 cameraId) {
 
 void CM_DisplayBattleBombKart(s32 playerId, s32 primAlpha) {
 
-    if ((playerId < 0) || (playerId > 4)) {
+    if ((playerId < 0) || (playerId >= ARRAY_COUNT(GetWorld()->mPlayerBombKart))) {
         return;
     }
 
@@ -257,7 +258,7 @@ void CM_DisplayBattleBombKart(s32 playerId, s32 primAlpha) {
 }
 
 void CM_DrawBattleBombKarts(s32 cameraId) {
-    for (size_t i = 0; i < gPlayerCount; i++) {
+    for (size_t i = 0; i < LocalMP_Count(); i++) {
         GetWorld()->mPlayerBombKart[i].Draw(i, cameraId);
     }
 }
@@ -675,7 +676,7 @@ void CM_SpawnStarterLakitu() {
         return;
     }
 
-    for (size_t i = 0; i < gPlayerCountSelection1; i++) {
+    for (size_t i = 0; i < LocalMP_Count(); i++) {
         // Retry does not respawn actors, therefore, re-use lakitu.
         if (auto it = GetWorld()->Lakitus.find(i); it != GetWorld()->Lakitus.end()) {
             if (it->second) {

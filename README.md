@@ -1,104 +1,54 @@
-![Spaghetti Kart](docs/spaghettigithublight.png#gh-light-mode-only)
-![Spaghetti Kart](docs/spaghettigithubnight.png#gh-dark-mode-only)
+# Mario kart 64 5+players Ricky Gameplays
 
-## Website & Discord
+An unofficial fork of **[HarbourMasters/SpaghettiKart](https://github.com/HarbourMasters/SpaghettiKart)**, customized by Ricky Gameplays. The original PC port, engine, and upstream work are by HarbourMasters and the SpaghettiKart contributors. This fork preserves their Git history and credits.
 
-Official Website: https://www.harbourmasters.org/
+## Added features
 
-If you're having any trouble after reading through this `README`, feel free ask for help in the SpaghettiKart Support text channels. Please keep in mind that we do not condone piracy.
+- Local play for 5–8 humans, with Grand Prix, VS, and Battle.
+- Grand Prix for 3 and 4 players; optional bots fill the Grand Prix grid to eight racers for 3–7 humans.
+- Game-style menus for mode, engine class, character, cup, and course selection, including repeated characters.
+- Smaller position numbers, lap counters, and item boxes for the extra split screens, with item roulette and its sound.
+- A shared minimap and race progress display. The course minimap uses the widest player's screen; the line display stays at the screen divider.
+- A selectable player preference for the wider split screen in 5, 7, and 8 player layouts.
+- Expanded Battle rankings with colored portraits and win totals, plus retry, course change, driver change, and quit.
+- Controller bindings and reusable profiles for all eight ports.
+- Adjustable racer render distance, from the original 1x range to 5x.
+- A reversible **All tracks completed** cheat toggle that unlocks Mirror mode and the alternate title background while enabled.
 
-# Quick Start
+## Getting started
 
-SpaghettiKart does not include any copyrighted assets.  You are required to provide a supported copy of the game.
+Open the PC menu with **Escape**. Under **Multiplayer → Local play**, enable **Enable 8 players**, then move right past 4P on GAME SELECT to reach 5P–8P. Enable **Enable bots in 3 to 7 player grand prix** to fill available Grand Prix slots with bots. Either multiplayer option also exposes Grand Prix in the normal 3P/4P menus.
 
-### 1. Verify your ROM dump
+Use **Wide screen preference** and **Racer render distance** in the same menu. Controller profiles are in the controller bindings window. The completion toggle is under **Enhancements → Cheats**. Use the normal **C-right** input to change the shared map display.
 
-The US ROM is the only supported version. You can verify you have dumped a supported copy of the game by using the SHA-1 File Checksum Online at <https://www.romhacking.net/hash/>. The hash for a US ROM is SHA-1: 579C48E211AE952530FFC8738709F078D5DD215E.
+This repository contains source changes and the custom multiplayer menu texture. ROMs, extracted game archives, saves, and personal controller settings are not included. Supply your own supported US Mario Kart 64 dump, as described in the [upstream setup guide](docs/UPSTREAM-README.md).
 
-### 2. Verify your ROM is in .z64 format
+## Building
 
-Your ROM needs to be in .z64 format. If it's in .n64 format, use the following to convert it to a .z64: <https://hack64.net/tools/swapper.php>
+Clone with submodules:
 
-### 2. Download SpaghettiKart from [Releases](https://github.com/HarbourMasters/SpaghettiKart/releases)
+```sh
+ git clone --recurse-submodules https://github.com/Ricky69Gameplays69Caballo/Mario-kart-64-5-players-Ricky-Gameplays.git
+ cd Mario-kart-64-5-players-Ricky-Gameplays
+```
 
-### 3. Generating the O2R from the ROM
+Follow the [upstream build instructions](docs/BUILDING.md) for dependencies and ROM placement. For Windows, install Visual Studio 2022 with C++ tools and CMake, then run:
 
-#### Windows
+```sh
+cmake -S . -B build/x64 -G "Visual Studio 17 2022" -T v143 -A x64
+cmake --build build/x64 --config Release --target ExtractAssets
+cmake --build build/x64 --config Release --target GenerateO2R
+cmake --build build/x64 --config Release
+```
 
-* Extract every file from the zip into a folder of your choosing.
-* Run "Spaghettify.exe" and select your US ROM.
+During configuration, CMake automatically applies [the controller dependency patch](patches/libultraship-combined.patch) to the pinned libultraship submodule. Reconfiguration recognizes an already applied patch. GenerateO2R includes this fork's custom multiplayer menu texture; keep the generated `spaghetti.o2r` alongside the executable.
 
-#### Linux
+The Combined changes were developed and built on Windows x64. Other platforms have not been checked for this fork, and the extended multiplayer modes may still have bugs. Upstream release downloads do not contain these changes.
 
-* Extract every file from the zip into a folder of your choosing.
-* Ensure `zenity` or `kdialog` package is installed.
-* Run "spaghetti.appimage" and select your US ROM. You may have to chmod +x the appimage via terminal.
+## Credits
 
-#### Nintendo Switch
+- [HarbourMasters/SpaghettiKart](https://github.com/HarbourMasters/SpaghettiKart): original project and contributors.
+- libultraship and its contributors: supporting port framework.
+- Ricky Gameplays: this fork and custom multiplayer menu artwork.
 
-* Run one of the PC releases to generate an `mk64.o2r` file. After launching the game on PC, you will be able to find these files in the same directory as `Spaghettify.exe` or `spaghetti.appimage`.
-* Copy the files to your sd card
-
-### 4. Play
-
-* Launch `Spaghettify.exe`
-Congratulations, you are now sailing with SpaghettiKart! Have fun!
-
-# Configuration
-
-### Default controls configuration
-
-| N64 | A | B | L | R | Z | Start | Analogue stick | C buttons | D-Pad |
-| - | - | - | - | - | - | - | - | - | - |
-| Keyboard | Shift | Ctrl | Q | Space | Z | Enter | Arrow keys | TGFH (↑ ↓ ← →) | Num 8 2 4 6 |
-| SDL Gamepad | A | X | LB | RB | LT | Start | L-Stick | R-Stick Up, B, Y, R-Stick Right (↑ ↓ ← →) | D-Pad |
-
-### Other shortcuts
-
-| Keys | Action |
-| - | - |
-| F11 | Fullscreen |
-| Tab | Toggle Alternate assets |
-| Ctrl+R | Reset |
-| Esc | Settings |
-
-### Graphics Backends
-
-Currently, there are three rendering APIs supported: DirectX11 (Windows), OpenGL (all platforms), and Metal (macOS). You can change which API to use in the `Settings` menu of the menubar, which requires a restart.  If you're having an issue with crashing, you can change the API in the `spaghettify.cfg.json` file by finding the line `"Backend":{`... and changing the `id` value to `3` and set the `Name` to `OpenGL`. `DirectX 11` with id `2` is the default on Windows. `Metal` with id `4` is the default on macOS.
-
-# Modding
-
-Custom assets are packed in `.o2r` or stored `.zip` files. To use custom assets, place them in the `mods` folder.
-
-There is an official [gamebanana page](https://gamebanana.com/games/22970).
-
-If you're interested in creating and/or packing your own custom asset `.o2r` files, check out the [documentation page](https://harbourmasters.github.io/SpaghettiKart/).
-
-**Note that .otr archives are not supported in SpaghettiKart!**
-
-# Development
-
-### Building
-
-If you want to manually compile SpaghettiKart, please consult the [building instructions](https://github.com/HarbourMasters/SpaghettiKart/blob/main/docs/BUILDING.md).
-
-### Playtesting (nightly)
-
-If you want to playtest a continuous integration build, you can find them at the links below. Keep in mind that these are for playtesting only, and you will likely encounter bugs and possibly crashes.
-
-* [Windows 64 bit](https://nightly.link/HarbourMasters/SpaghettiKart/workflows/main/main/spaghetti-windows-x64.zip?status=completed)
-* [Windows 32 bit](https://nightly.link/HarbourMasters/SpaghettiKart/workflows/main/main/spaghetti-windows-Win32.zip?status=completed)
-* [Linux 64 bit](https://nightly.link/HarbourMasters/SpaghettiKart/workflows/main/main/spaghetti-linux-x64.zip?status=completed)
-* [Linux 32 bit](https://nightly.link/HarbourMasters/SpaghettiKart/workflows/main/main/spaghetti-linux-x86.zip?status=completed)
-* [macOS-arm64](https://nightly.link/HarbourMasters/SpaghettiKart/workflows/main/main/spaghetti-mac-arm64.zip?status=completed)
-* [macOS-intel](https://nightly.link/HarbourMasters/SpaghettiKart/workflows/main/main/spaghetti-mac-intel-x64.zip?status=completed)
-* [Switch](https://nightly.link/HarbourMasters/SpaghettiKart/workflows/main/main/Spaghettify-switch.zip?status=completed)
-
-Maintainers: [MegaMech](https://www.github.com/MegaMech), [Coco](https://www.github.com/coco875), [Kirito](https://github.com/KiritoDv)
-
-<a href="https://github.com/Kenix3/libultraship/">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="./docs/poweredbylus.darkmode.png">
-    <img alt="Powered by libultraship" src="./docs/poweredbylus.lightmode.png">
-  </picture>
-</a>
+See the [original README](docs/UPSTREAM-README.md) for upstream maintainers, dependencies, and documentation. Existing attribution and copyright notices are retained.

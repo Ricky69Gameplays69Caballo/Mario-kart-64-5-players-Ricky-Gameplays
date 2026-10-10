@@ -1,3 +1,4 @@
+#include "port/LocalMultiplayer.h"
 #include "RaceManager.h"
 
 #include "AllActors.h"
@@ -152,6 +153,16 @@ void RaceManager::SetItemTables() {
         case BATTLE:
             humanTableName = "mk:battle";
             break;
+    }
+    if (LocalMP_IsActive() && gModeSelection != BATTLE) {
+        const bool bots = LocalMP_RacerCount() > LocalMP_Count();
+        humanTableName = bots && CVarGetInteger("gHarderCPU", false) ?
+                         "mk:hard_cpu_grand_prix" : "mk:human_grand_prix";
+        if (bots) {
+            cpuTableName = CVarGetInteger("gHarderCPU", false) ? "mk:hard_cpu_grand_prix" : "mk:cpu_grand_prix";
+        } else {
+            cpuTableName.reset();
+        }
     }
     if (humanTableName.has_value()) {
         mHumanItemTable = gItemTableRegistry.Get(humanTableName.value());

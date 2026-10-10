@@ -5,6 +5,7 @@
 #include "GameExtractor.h"
 #include "engine/mods/ModManager.h"
 #include "ui/ImguiUI.h"
+#include "ui/ControllerProfiles.h"
 #include "ship/Context.h"
 #include "ship/controller/controldevice/controller/mapping/ControllerDefaultMappings.h"
 #include "resource/type/ResourceType.h"
@@ -178,7 +179,9 @@ GameEngine::GameEngine() {
     // auto wnd = std::make_shared<Fast::Fast3dWindow>(std::vector<std::shared_ptr<Ship::GuiWindow>>({}));
     // auto wnd = std::dynamic_pointer_cast<Fast::Fast3dWindow>(Ship::Context::GetRawInstance()->GetWindow());
 
-    gui->AddGuiWindow(std::make_shared<LUS::InputEditorWindow>(CVAR_CONTROLLER_CONFIGURATION_WINDOW_OPEN, "Input Editor"));
+    auto inputEditor = std::make_shared<LUS::InputEditorWindow>(CVAR_CONTROLLER_CONFIGURATION_WINDOW_OPEN, "Input Editor");
+    inputEditor->SetPortProfilesDrawCallback(ControllerProfiles::DrawForPort);
+    gui->AddGuiWindow(inputEditor);
     gui->AddGuiWindow(std::make_shared<LUS::GfxDebuggerWindow>(CVAR_GFX_DEBUGGER_WINDOW_OPEN, "GfxDebuggerWindow", ImVec2(520, 600)));
 
     this->context->Init({assets_path}, {}, 3, { 26800, 512, 1100 }, wnd, controlDeck);

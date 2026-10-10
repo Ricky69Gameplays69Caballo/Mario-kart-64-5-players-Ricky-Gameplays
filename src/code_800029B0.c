@@ -1,3 +1,4 @@
+#include "port/LocalMultiplayer.h"
 #include <libultraship.h>
 #include <macros.h>
 #include <mk64.h>
@@ -58,7 +59,7 @@ u16 D_800DC5E4 = 0;
 //! @todo gPlayerWinningIndex (D_800DC5E8) accessed as word, D_800DC5EB as u8
 s32 gPlayerWinningIndex = 0;
 
-ALIGNED16 ScreenContext gScreenContexts[4] = { 0 };
+ALIGNED16 ScreenContext gScreenContexts[8] = { 0 };
 ScreenContext* gScreenOneCtx = &gScreenContexts[0];
 ScreenContext* gScreenTwoCtx = &gScreenContexts[1];
 ScreenContext* gScreenThreeCtx = &gScreenContexts[2];
@@ -132,7 +133,7 @@ Vec3f D_8015F778;
 
 f32 gTrackDirection; // Extra mode, flips vertices.
 s32 gNumScreens;      // Set to zero in single player mode
-s32 D_8015F790[64];   // Unknown data, potentially not used.
+s32 D_8015F790[128];  // Sixteen entries for each of eight viewports.
 u16 D_8015F890;
 u16 D_8015F892;
 u16 D_8015F894;
@@ -225,6 +226,8 @@ void setup_race(void) {
     D_8015F700 = 200;
 
     func_80005310();
+    // Adopt native-menu human-only GP before choosing racer and camera counts.
+    LocalMP_ResetRace();
     CM_CleanCameras();
     spawn_players_and_cameras();
     load_kart_textures();
@@ -262,7 +265,7 @@ void setup_race(void) {
 
     controller = gControllerOne;
 
-    for (i = 0; i < 7; i++, controller++) {
+    for (i = 0; i < NUM_PLAYERS; i++, controller++) {
         controller->rawStickX = 0;
         controller->rawStickY = 0;
         controller->buttonPressed = 0;

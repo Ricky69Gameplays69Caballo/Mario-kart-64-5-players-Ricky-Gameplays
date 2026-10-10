@@ -267,10 +267,10 @@ extern u8* gKartWario189Wheel0[];
 extern s16 D_80165020[40];
 // Used to calculate difference between previous and current player velocity.
 extern Vec3f gPlayerLastVelocity[8];
-extern s16 gLastAnimFrameSelector[4][8];
-extern s16 gLastAnimGroupSelector[4][8];
-extern s16 D_80165150[4][8];
-extern s16 D_80165190[4][8];
-extern s16 D_801651D0[4][8];
+extern s16 gLastAnimFrameSelector[8][8];
+extern s16 gLastAnimGroupSelector[8][8];
+extern s16 D_80165150[8][8];
+extern s16 D_80165190[8][8];
+extern s16 D_801651D0[8][8];
 
 #endif // RENDER_PLAYER_H

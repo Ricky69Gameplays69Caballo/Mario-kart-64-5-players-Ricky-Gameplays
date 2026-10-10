@@ -1027,7 +1027,6 @@ void func_802842D8(CinematicCamera* camera) {
 }
 
 void func_80284308(CinematicCamera* camera) {
-    Player** sp30[4] = { &gPlayerOne, &gPlayerTwo, &gPlayerThree, &gPlayerFour };
     Player* ply;
     f32 x;
     f32 y;
@@ -1037,7 +1036,9 @@ void func_80284308(CinematicCamera* camera) {
     move_cinematic_camera_along_spline(camera, (struct struct_80286A04*) D_802858E0,
                                        (struct struct_80286A04*) D_802858F8, 0);
 
-    ply = *(sp30[0] + D_802874D8.unk1D);
+    // Ceremony racers are spawned in podium order, with the best human in
+    // slot four for a non-podium result. Avoid pointer arithmetic on globals.
+    ply = &gPlayers[D_802874D8.unk1D < 3 ? D_802874D8.unk1D : 3];
 
     x = ply->pos[0] - gPlayerOne->pos[0];
     y = ply->pos[1] - gPlayerOne->pos[1];

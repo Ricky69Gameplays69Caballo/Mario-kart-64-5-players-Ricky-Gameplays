@@ -1,3 +1,4 @@
+#include "port/LocalMultiplayer.h"
 #include <libultraship.h>
 #include <stdio.h>
 #include <macros.h>
@@ -87,6 +88,7 @@ void func_8028E028(void) {
 }
 
 void update_player_battle_status(void) {
+    if (LocalMP_IsActive()) { LocalMP_UpdateBattle(); return; }
     Player* player;
     s32 playerIndex;
     s16 playersAlive[4];
@@ -261,6 +263,24 @@ void func_8028E678(void) {
                     break;
                 case SCREEN_MODE_2P_SPLITSCREEN_VERTICAL:
                     D_8015F894 = 6;
+                    break;
+                case SCREEN_MODE_3P_4P_SPLITSCREEN:
+                    // The existing GP standings use two diagonal replay panels.
+                    // Retain the human count and selected race layout for the next race.
+                    if (gPlayerCountSelection1 == 3) {
+                        func_800925CC();
+                    }
+                    gActiveScreenMode = SCREEN_MODE_2P_SPLITSCREEN_VERTICAL;
+                    gScreenOneCtx->screenWidth = gScreenTwoCtx->screenWidth = 160;
+                    gScreenOneCtx->screenHeight = gScreenTwoCtx->screenHeight = 120;
+                    gScreenOneCtx->screenStartX = 80;
+                    gScreenOneCtx->screenStartY = 60;
+                    gScreenTwoCtx->screenStartX = 240;
+                    gScreenTwoCtx->screenStartY = 180;
+                    gScreenAspect = 1.33333337f;
+                    D_8015F894 = 3;
+                    func_80092500();
+                    func_80019DE4();
                     break;
             }
             break;
@@ -475,6 +495,7 @@ void func_8028EEF0(s32 i) {
 }
 
 void func_8028EF28(void) {
+    if (LocalMP_IsActive()) { LocalMP_UpdateLaps(); return; }
     s16 currentPosition;
     s32 i;
 
@@ -506,7 +527,7 @@ void func_8028EF28(void) {
                         D_802BA032 |= PLAYER_EXISTS;
                     }
 
-                    if (gModeSelection == GRAND_PRIX && gPlayerCountSelection1 == 2 && D_802BA048 == 0) {
+                    if (gModeSelection == GRAND_PRIX && gPlayerCountSelection1 >= 2 && D_802BA048 == 0) {
                         D_802BA048 = 1;
                     }
                     if ((gPlayers[i].type & PLAYER_INVISIBLE_OR_BOMB) == 0) {
@@ -653,6 +674,7 @@ void func_8028F4E8(void) {
  * as an effect.
  */
 void func_8028F588(void) {
+    if (LocalMP_IsActive()) { LocalMP_Layout(); return; }
     s16 screenWidth;
 
     if ((Editor_IsEnabled() == true) || (CM_IsTourEnabled() == true)) {
@@ -752,6 +774,7 @@ void func_8028F914(void) {
 }
 
 void func_8028F970(void) {
+    if (LocalMP_IsActive()) return;
     s32 i;
 
     if (D_8015F890) {
@@ -864,6 +887,7 @@ void func_8028FC34(void) {
 }
 
 void func_8028FCBC(void) {
+    if (LocalMP_FinishTick()) return;
     Player* ply = &gPlayers[0];
     s32 i;
     u32 phi_v0_4;
@@ -988,6 +1012,24 @@ void func_8028FCBC(void) {
                                 gRaceState = RACE_FINISHED;
                             }
                             break;
+                        case SCREEN_MODE_3P_4P_SPLITSCREEN: {
+                            bool allHumansFinished = true;
+                            gPlayerWinningIndex = 0;
+                            for (s32 human = 0; human < gPlayerCountSelection1; human++) {
+                                if (!(gPlayers[human].type & PLAYER_CINEMATIC_MODE)) {
+                                    allHumansFinished = false;
+                                }
+                                if (gPlayers[human].currentRank < gPlayers[gPlayerWinningIndex].currentRank) {
+                                    gPlayerWinningIndex = human;
+                                }
+                            }
+                            if (allHumansFinished) {
+                                func_8028E298();
+                                D_802BA038 = 600;
+                                gRaceState = RACE_FINISHED;
+                            }
+                            break;
+                        }
                     }
                     break;
                 case VERSUS:

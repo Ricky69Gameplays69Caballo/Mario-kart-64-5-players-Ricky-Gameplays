@@ -1,3 +1,4 @@
+#include "port/LocalMultiplayer.h"
 #include <libultraship.h>
 #include <libultra/vi.h>
 #include <libultra/os.h>
@@ -66,7 +67,8 @@ struct Controller* gControllerOne = &gControllers[0];
 struct Controller* gControllerTwo = &gControllers[1];
 struct Controller* gControllerThree = &gControllers[2];
 struct Controller* gControllerFour = &gControllers[3];
-struct Controller* gControllerFive = &gControllers[4]; // All physical controllers combined.`
+static struct Controller sMenuController;
+struct Controller* gControllerFive = &sMenuController; // All physical controllers combined.`
 struct Controller* gControllerSix = &gControllers[5];
 struct Controller* gControllerSeven = &gControllers[6];
 struct Controller* gControllerEight = &gControllers[7];
@@ -100,8 +102,8 @@ OSIoMesg gDmaIoMesg;
 OSMesgQueue gSIEventMesgQueue;
 OSMesg gSIEventMesgBuf[3];
 
-OSContStatus gControllerStatuses[4];
-OSContPad gControllerPads[4];
+OSContStatus gControllerStatuses[8];
+OSContPad gControllerPads[8];
 u8 gControllerBits;
 // Contains a 32x32 grid of indices into gCollisionIndices containing indices into gCollisionMesh
 CollisionGrid gCollisionGrid[1024];
@@ -395,27 +397,17 @@ void read_controllers(void) {
     osContStartReadData(&gSIEventMesgQueue);
     // osRecvMesg(&gSIEventMesgQueue, &msg, OS_MESG_BLOCK);
     osContGetReadData(gControllerPads);
-    update_controller(0);
-    update_controller(1);
-    update_controller(2);
-    update_controller(3);
-    gControllerFive->button = (s16) (((gControllerOne->button | gControllerTwo->button) | gControllerThree->button) |
-                                     gControllerFour->button);
-    gControllerFive->buttonPressed =
-        (s16) (((gControllerOne->buttonPressed | gControllerTwo->buttonPressed) | gControllerThree->buttonPressed) |
-               gControllerFour->buttonPressed);
-    gControllerFive->buttonDepressed = (s16) (((gControllerOne->buttonDepressed | gControllerTwo->buttonDepressed) |
-                                               gControllerThree->buttonDepressed) |
-                                              gControllerFour->buttonDepressed);
-    gControllerFive->stickDirection =
-        (s16) (((gControllerOne->stickDirection | gControllerTwo->stickDirection) | gControllerThree->stickDirection) |
-               gControllerFour->stickDirection);
-    gControllerFive->stickPressed =
-        (s16) (((gControllerOne->stickPressed | gControllerTwo->stickPressed) | gControllerThree->stickPressed) |
-               gControllerFour->stickPressed);
-    gControllerFive->stickDepressed =
-        (s16) (((gControllerOne->stickDepressed | gControllerTwo->stickDepressed) | gControllerThree->stickDepressed) |
-               gControllerFour->stickDepressed);
+    memset(gControllerFive, 0, sizeof(*gControllerFive));
+    for (s32 i = 0; i < NUM_PLAYERS; i++) {
+        update_controller(i);
+        gControllerFive->button |= gControllers[i].button;
+        gControllerFive->buttonPressed |= gControllers[i].buttonPressed;
+        gControllerFive->buttonDepressed |= gControllers[i].buttonDepressed;
+        gControllerFive->stickDirection |= gControllers[i].stickDirection;
+        gControllerFive->stickPressed |= gControllers[i].stickPressed;
+        gControllerFive->stickDepressed |= gControllers[i].stickDepressed;
+    }
+    LocalMP_OnInput();
 }
 
 void func_80000BEC(void) {
@@ -705,7 +697,7 @@ void race_logic_loop(void) {
     gMatrixObjectCount = 0;
     gMatrixEffectCount = 0;
 
-    if (gIsGamePaused != 0) {
+    if (gIsGamePaused != 0 && !LocalMP_IsActive()) {
         func_80290B14();
     }
     if (gIsInQuitToMenuTransition != 0) {
@@ -744,7 +736,19 @@ void race_logic_loop(void) {
         select_framebuffer();
     }
 
-    switch (gActiveScreenMode) {
+    if (LocalMP_IsActive()) {
+        LocalMP_Layout();
+        const s32 battleResults = LocalMP_BattleResultsOpen();
+        const s32 firstScreen = battleResults ? gPlayerWinningIndex : 0;
+        const s32 lastScreen = battleResults ? firstScreen + 1 : LocalMP_Count();
+        for (s32 screen = firstScreen; screen < lastScreen; screen++) {
+            // Set the projection for this viewport, including the wider last
+            // player in 5P, 7P and 8P. Sky and game cameras use this same ratio.
+            gScreenAspect = (f32) gScreenContexts[screen].screenWidth / gScreenContexts[screen].screenHeight;
+            render_screens(&gScreenContexts[screen], RENDER_SCREEN_MODE_3P_4P_PLAYER_ONE, 8 + (screen % 4), screen);
+        }
+        gScreenAspect = (f32) gScreenContexts[0].screenWidth / gScreenContexts[0].screenHeight;
+    } else switch (gActiveScreenMode) {
         case SCREEN_MODE_1P:
             render_screens(gScreenOneCtx, RENDER_SCREEN_MODE_1P_PLAYER_ONE, 0, 0);
             break;
@@ -796,8 +800,14 @@ void race_logic_loop(void) {
     display_debug_info();
 
     func_802A4300();
-    func_800591B4();
-    func_80093E20();
+    if (!LocalMP_IsActive() || LocalMP_Count() <= 4) func_800591B4();
+    if (!LocalMP_IsActive()) func_80093E20();
+    else {
+        LocalMP_DrawRacePositions();
+        LocalMP_DrawItemWindows();
+        LocalMP_DrawPauseMenu();
+        LocalMP_DrawBattleResults();
+    }
 #if DVDL
     display_dvdl();
 #endif
@@ -1156,6 +1166,7 @@ void thread5_game_loop(void) {
 }
 
 void thread5_iteration(void) {
+    LocalMP_ProcessRequest();
     func_800CB2C4();
     calculate_delta_time();
 #ifdef TARGET_N64

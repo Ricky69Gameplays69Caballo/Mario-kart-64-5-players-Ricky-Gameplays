@@ -1,3 +1,4 @@
+#include "port/LocalMultiplayer.h"
 #include <libultraship.h>
 #include "SpaghettiGui.h"
 #include <ship/window/gui/Gui.h>
@@ -154,6 +155,7 @@ void SpaghettiGui::DrawMenu() {
     }
 
     ImGui::End();
+    LocalMP_DrawUI();
 }
 
 } // namespace Ship

@@ -9,6 +9,7 @@
 #include <variant>
 #include <tuple>
 #include "ResolutionEditor.h"
+#include "port/LocalMultiplayer.h"
 
 #include "engine/tracks/Track.h"
 #include "engine/tracks/KalimariDesert.h"
@@ -23,6 +24,7 @@ extern s32 gGamestateNext;
 extern s32 gMenuSelection;
 #include "audio/external.h"
 #include "defines.h"
+#include "save.h"
 }
 
 namespace GameUI {
@@ -357,6 +359,51 @@ void PortMenu::AddSettings() {
 }
 int32_t motionBlurStrength;
 
+void PortMenu::AddMultiplayer() {
+    AddMenuEntry("Multiplayer", "gSettings.Menu.MultiplayerSidebarSection");
+    AddSidebarEntry("Multiplayer", "Local play", 1);
+    WidgetPath path = { "Multiplayer", "Local play", SECTION_COLUMN_1 };
+    auto outsideRace = [](WidgetInfo& info) {
+        info.options->disabled = !MultiplayerOptions_CanChange();
+        info.options->disabledTooltip = "Return to the game menu to change multiplayer options.";
+    };
+    AddWidget(path, "Enable 8 players", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_MULTIPLAYER_EIGHT)
+        .PreFunc(outsideRace)
+        .Callback([](WidgetInfo&) { MultiplayerOptions_OnEightChanged(); })
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip(
+            "Adds 5P-8P choices to GAME SELECT: move right past 4P. Use the game controls to choose mode, class, characters and cup. "
+            "F8 opens the optional PC lobby. Wide screen preference chooses who fills spare layout space."));
+    AddWidget(path, "Enable bots in 3 to 7 player grand prix", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_MULTIPLAYER_BOTS)
+        .PreFunc(outsideRace)
+        .Callback([](WidgetInfo&) { MultiplayerOptions_OnBotsChanged(); })
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip(
+            "Adds Grand Prix with bots to the normal 3/4-player menu. With Enable 8 players on, GP for 5-7 humans also fills the grid to eight. "
+            "Changing this option returns to the main game menu. Both multiplayer options can be enabled together."));
+    static const std::unordered_map<int32_t, const char*> widePlayerOptions = {
+        {0, "Automatic (last player)"}, {1, "Player 1"}, {2, "Player 2"},
+        {3, "Player 3"}, {4, "Player 4"}, {5, "Player 5"}, {6, "Player 6"},
+        {7, "Player 7"}, {8, "Player 8"}
+    };
+    AddWidget(path, "Wide screen preference", WIDGET_CVAR_COMBOBOX)
+        .CVar("gMultiplayer.WidePlayer")
+        .Options(ComboboxOptions().ComboMap(widePlayerOptions).DefaultIndex(0).Tooltip(
+            "Choose who gets the wider bottom-row screen in 5, 7 or 8 player modes. "
+            "Swaps screen positions with the last player. Applies immediately and is saved. "
+            "An absent player falls back to the last player. Six-player mode has equal screens."));
+    AddWidget(path, "Both options are saved. Choose 3 or 4 players in the normal game menu for Grand Prix with bots. "
+                    "Move right past 4P in GAME SELECT for 5P-8P. With both options on, GP adds bots for 3-7 humans; VS stays human-only.", WIDGET_TEXT);
+    AddWidget(path, "Visibility", WIDGET_SEPARATOR_TEXT);
+    AddWidget(path, "Racer render distance: %dx", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_RACER_RENDER_DISTANCE)
+        .Options(IntSliderOptions().Min(1).Max(5).Step(1).DefaultValue(2).Tooltip(
+            "Keep human and CPU racers visible farther away. 1x restores the original racer visibility check; "
+            "2x-5x extend the range and prevent early culling at wide screen edges. "
+            "Applies immediately to Grand Prix, VS and Battle for any player count, and is saved. "
+            "Higher settings can reduce performance. Track scenery keeps its normal visibility rules."));
+}
+
 void PortMenu::AddEnhancements() {
     AddMenuEntry("Enhancements", "gSettings.Menu.EnhancementsSidebarSection");
     WidgetPath path = { "Enhancements", "General", SECTION_COLUMN_1 };
@@ -413,6 +460,11 @@ void PortMenu::AddEnhancements() {
 
     path = { "Enhancements", "Cheats", SECTION_COLUMN_1 };
     AddSidebarEntry("Enhancements", "Cheats", 3);
+    AddWidget(path, "All tracks completed", WIDGET_CVAR_CHECKBOX)
+        .CVar("gAllTracksCompleted")
+        .Options(CheckboxOptions().Tooltip(
+            "Shows gold in all cups and unlocks Mirror mode and the alternate background while enabled. "
+            "Disable to use your actual saved progress. Return to the title/main menu to refresh the background."));
     AddWidget(path, "Moon Jump", WIDGET_CVAR_CHECKBOX).CVar("gEnableMoonJump");
     AddWidget(path, "Disable Wall Collision", WIDGET_CVAR_CHECKBOX)
         .CVar("gNoWallColision")
@@ -631,6 +683,7 @@ void PortMenu::InitElement() {
     Ship::Menu::InitElement();
     AddSettings();
     AddEnhancements();
+    AddMultiplayer();
     AddDevTools();
 
     if (CVarGetInteger("gSettings.Menu.SidebarSearch", 0)) {

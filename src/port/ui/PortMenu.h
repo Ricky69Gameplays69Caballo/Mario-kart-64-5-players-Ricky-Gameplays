@@ -72,6 +72,7 @@ class PortMenu : public Ship::Menu {
     WidgetInfo& AddWidget(WidgetPath& pathInfo, std::string widgetName, WidgetType widgetType);
     void AddSettings();
     void AddEnhancements();
+    void AddMultiplayer();
       void AddRulesets();
     void AddDevTools();
       void AddSceneVisibility();

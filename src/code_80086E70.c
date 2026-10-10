@@ -1,4 +1,5 @@
 #include <libultraship.h>
+#include "port/LocalMultiplayer.h"
 #include <macros.h>
 #include <common_structs.h>
 #include <mk64.h>
@@ -1388,7 +1389,7 @@ UNUSED void func_8008A610(s32 objectIndex) {
     Camera* camera;
 
     clear_object_flag(objectIndex, VISIBLE);
-    for (camera = camera1, loopIndex = 0; loopIndex < gPlayerCountSelection1; loopIndex++, camera++) {
+    for (camera = camera1, loopIndex = 0; loopIndex < LocalMP_Count(); loopIndex++, camera++) {
         if ((gObjectList[objectIndex].state != 0) && (is_object_visible_on_camera(objectIndex, camera, 0x2AABU) != 0)) {
             set_object_flag(objectIndex, VISIBLE);
         }
@@ -1401,7 +1402,7 @@ void func_8008A6DC(s32 objectIndex, f32 arg1) {
     Camera* camera;
 
     clear_object_flag(objectIndex, 0x00060000);
-    for (camera = camera1, loopIndex = 0; loopIndex < gPlayerCountSelection1; loopIndex++, camera++) {
+    for (camera = camera1, loopIndex = 0; loopIndex < LocalMP_Count(); loopIndex++, camera++) {
         if ((gObjectList[objectIndex].state != 0) &&
             (is_within_horizontal_distance_to_camera(objectIndex, camera, arg1) != 0)) {
             set_object_flag(objectIndex, 0x00020000);

@@ -401,6 +401,7 @@ void func_800B5404(s32 arg0, s32 arg1) {
 
 // Get Grand Prix points for a given cup and CC mode
 u8 func_800B54C0(s32 cup, s32 cc_mode) {
+    if (CVarGetInteger("gAllTracksCompleted", 0)) return 3;
     return func_800B54EC(cup, gSaveData.main.saveInfo.grandPrixPoints[cc_mode]);
 }
 
@@ -430,6 +431,7 @@ u8 func_800B5508(s32 cup, s32 ccGrandPrixPoints, s32 points_scored) {
 // Check if all 4 cups have gold cups scored
 // for a given CC mode
 s32 is_cc_mode_complete(s32 cc_mode) {
+    if (CVarGetInteger("gAllTracksCompleted", 0)) return true;
     if (gSaveData.main.saveInfo.grandPrixPoints[cc_mode] == 0xFF) {
         return true;
     }

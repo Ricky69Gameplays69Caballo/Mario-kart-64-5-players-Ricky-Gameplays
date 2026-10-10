@@ -1,3 +1,4 @@
+#include "port/LocalMultiplayer.h"
 #include <libultraship.h>
 #include <libultra/gbi.h>
 #include "Thwomp.h"
@@ -345,7 +346,7 @@ void OThwomp::SetVisibility(s32 objectIndex) { // func_8008A4CC
     Camera* camera;
 
     clear_object_flag(objectIndex, 0x00070000);
-    for (loopIndex = 0, camera = camera1; loopIndex < gPlayerCountSelection1; loopIndex++, camera++) {
+    for (loopIndex = 0, camera = camera1; loopIndex < LocalMP_Count(); loopIndex++, camera++) {
         if (gObjectList[objectIndex].state != 0) {
             if ((D_8018CF68[loopIndex] >= (gObjectList[objectIndex].unk_0DF - 1)) &&
                 ((gObjectList[objectIndex].unk_0DF + 1) >= D_8018CF68[loopIndex])) {
@@ -440,7 +441,7 @@ s32 OThwomp::func_8007E59C(s32 objectIndex) {
     temp_v0 = 0;
     player = gPlayerOne;
     camera = camera1;
-    for (someIndex = 0; someIndex < gPlayerCountSelection1; someIndex++) {
+    for (someIndex = 0; someIndex < LocalMP_Count(); someIndex++) {
         temp_v0 = OThwomp::func_8007E50C(objectIndex, player++, camera++);
         if (temp_v0 != 0) {
             break;

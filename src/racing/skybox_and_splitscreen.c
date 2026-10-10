@@ -1,3 +1,4 @@
+#include "port/LocalMultiplayer.h"
 #include <libultraship.h>
 #include <macros.h>
 #include <libultra/gbi.h>
@@ -112,8 +113,8 @@ void race_set_viewport(ScreenContext* arg0) {
     if (lry > SCREEN_HEIGHT) {
         lry = SCREEN_HEIGHT;
     }
-    ulx = 0;
-    uly = 0;
+    ulx = LocalMP_IsActive() ? screenStartX - screenWidth : 0;
+    uly = LocalMP_IsActive() ? screenStartY - screenHeight : 0;
 
     gDPSetScissor(gDisplayListHead++, G_SC_NON_INTERLACE, ulx, uly, lrx, lry);
 }
@@ -262,6 +263,8 @@ void select_framebuffer(void) {
 }
 
 void func_802A4300(void) {
+    // The local lobby draws a border around each of its own viewports.
+    if (LocalMP_IsActive()) return;
 
     if (gActiveScreenMode == SCREEN_MODE_1P) {
         return;
@@ -434,7 +437,7 @@ void func_802A4A0C(Vtx* vtx, ScreenContext* screen) {
     sp5C[0] = 0.0f;
     sp5C[1] = 0.0f;
     sp5C[2] = 30000.0f;
-    func_802B5564(matrix1, &sp128, camera->unk_B4, gScreenAspect, CM_GetProps()->NearPersp, CM_GetProps()->FarPersp,
+    func_802B5564(matrix1, &sp128, camera->unk_B4, gScreenAspect, CM_GetProps()->NearPersp, RacerRenderDistance_FarPlane(CM_GetProps()->FarPersp),
                   1.0f);
     func_802B5794(matrix2, camera->pos, camera->lookAt);
     mtxf_multiplication(matrix3, matrix1, matrix2);
@@ -500,6 +503,10 @@ void func_802A4D18(void) {
 }
 
 void func_802A4EF4(void) {
+    if (LocalMP_IsActive()) {
+        for (s32 i = 0; i < LocalMP_RacerCount(); i++) func_8001F394(&gPlayers[i]);
+        return;
+    }
     switch (gActiveScreenMode) {
         case SCREEN_MODE_1P:
             func_8001F394(gPlayerOne);
@@ -618,7 +625,7 @@ void render_screens(ScreenContext* screen, s32 mode, s32 someId, s32 playerId) {
 
                 if ((CVarGetInteger("gDrawSky", true) == true)) {
                     CM_RaceDrawSky(screen, someId);
-                    func_80093A30(someId); // Fill box for thunderbolt?
+                    if (!LocalMP_IsActive()) func_80093A30(someId); // Fill box for thunderbolt?
                 }
             }
             break;
@@ -627,7 +634,7 @@ void render_screens(ScreenContext* screen, s32 mode, s32 someId, s32 playerId) {
 
             if ((CVarGetInteger("gDrawSky", true) == true)) {
                 CM_RaceDrawSky(screen, someId);
-                func_80093A30(someId); // Fill box for thunderbolt?
+                if (!LocalMP_IsActive()) func_80093A30(someId); // Fill box for thunderbolt?
             }
             break;
     }
@@ -691,7 +698,10 @@ void render_screens(ScreenContext* screen, s32 mode, s32 someId, s32 playerId) {
     }
 
     if (CVarGetInteger("gDrawParticles", true) == true) {
-        switch (playerId) { // Render player particles or some effect
+        if (LocalMP_IsActive()) {
+            for (s8 racer = 0; racer < LocalMP_RacerCount(); racer++)
+                func_8006E7CC(&gPlayers[racer], racer, screenId);
+        } else switch (playerId) { // Render player particles or some effect
             case 0: func_80021B0C(); break;
             case 1: func_80021C78(); break;
             case 2: func_80021D40(); break;
@@ -702,14 +712,14 @@ void render_screens(ScreenContext* screen, s32 mode, s32 someId, s32 playerId) {
     if (CVarGetInteger("gDrawItemBoxes", true) == true) {
         render_item_boxes(screen);
     }
-    render_player_snow_effect(camera);
+    if (screenId < 4) render_player_snow_effect(camera);
     func_80058BF4(); // Setup texture modes
-    if (D_800DC5B8 != 0) {
+    if (D_800DC5B8 != 0 && !LocalMP_IsActive()) {
         func_80058C20(mode); // Setup hud matrix
     }
-    func_80093A5C(mode); // Perhaps pause render?
+    if (!LocalMP_IsActive()) func_80093A5C(mode); // Perhaps pause render?
 
-    if (CVarGetInteger("gDrawHUD", true) == true) {
+    if (!LocalMP_IsActive() && CVarGetInteger("gDrawHUD", true) == true) {
         if (D_800DC5B8 != 0) {
             render_hud(mode);
         }
@@ -723,6 +733,7 @@ void render_screens(ScreenContext* screen, s32 mode, s32 someId, s32 playerId) {
 
 // Makes the screen small at the start of a race
 void set_screen(void) {
+    if (LocalMP_IsActive()) { LocalMP_Layout(); return; }
     ScreenContext* wrapper = &gScreenContexts[0];
     Player* player = &gPlayers[0];
     // Camera* camera = &cameras[0];

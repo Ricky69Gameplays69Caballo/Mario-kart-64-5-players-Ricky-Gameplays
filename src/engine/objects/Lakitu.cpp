@@ -1,3 +1,4 @@
+#include "port/LocalMultiplayer.h"
 #include <libultraship.h>
 #include <libultra/gbi.h>
 #include "Lakitu.h"
@@ -277,7 +278,8 @@ void OLakitu::update_object_lakitu_starter(s32 objectIndex, s32 arg1) {
             break;
         case 2:
             set_and_run_timer_object(objectIndex, gObjectList[objectIndex].unk_048);
-            if ((gObjectList[objectIndex].timer == 0x00000055) && (gPlayerCount == 3) && (arg1 == 0)) {
+            if ((gObjectList[objectIndex].timer == 0x00000055) && (gPlayerCount == 3) &&
+                (gModeSelection != GRAND_PRIX) && (arg1 == 0)) {
                 D_8018D168 = 1;
             }
             break;
@@ -287,7 +289,8 @@ void OLakitu::update_object_lakitu_starter(s32 objectIndex, s32 arg1) {
             object_next_state(objectIndex);
             break;
         case 4:
-            if ((set_and_run_timer_object(objectIndex, 0x0000001E) != false) && (gPlayerCount != 3) && (arg1 == 0)) {
+            if ((set_and_run_timer_object(objectIndex, 0x0000001E) != false) &&
+                ((gPlayerCount != 3) || (gModeSelection == GRAND_PRIX)) && (arg1 == 0)) {
                 D_8018D168 = 1;
             }
             break;
@@ -356,7 +359,7 @@ void OLakitu::func_800729EC(s32 objectIndex) {
     D_8018D2A4 = 1;
 
     if (!IsYoshiValley()) {
-        for (i = 0; i < gPlayerCount; i++) {
+        for (i = 0; i < LocalMP_Count(); i++) {
             playerHUD[i].unk_81 = temp_v1;
         }
     }

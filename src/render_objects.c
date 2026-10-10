@@ -2453,23 +2453,98 @@ void func_8004E800(s32 playerId) {
     FrameInterpolation_RecordCloseChild();
 }
 
+void draw_expanded_item_window(s32 playerId, s32 x, s32 y, f32 scale) {
+    if (playerId < 0 || playerId >= NUM_PLAYERS) return;
+    const s32 objectIndex = gItemWindowObjectByPlayerId[playerId];
+    const Object* object = &gObjectList[objectIndex];
+    if (object->state < 2 || object->activeTLUT == NULL || object->activeTexture == NULL) return;
+    // Render the live native roulette frame, including its palette and item-use
+    // animations. Map the center into the full UI width for middle-column views.
+    const f32 uiLeft = OTRGetDimensionFromLeftEdge(0);
+    const f32 uiWidth = OTRGetDimensionFromRightEdge(SCREEN_WIDTH) - uiLeft;
+    FrameInterpolation_RecordOpenChild("Expanded item window", playerId);
+    func_80042330_unchanged((s32) (uiLeft + x * uiWidth / SCREEN_WIDTH), y, 0U, scale);
+    gSPDisplayList(gDisplayListHead++, D_0D007CD8);
+    draw_rectangle_texture_overlap((u8*) object->activeTLUT, (u8*) object->activeTexture,
+                                   (Vtx*) LOAD_ASSET(D_0D005C30), 40, 32, 40, 32);
+    FrameInterpolation_RecordCloseChild();
+}
+
+void draw_expanded_race_position(s32 playerId, s32 rank, s32 x, s32 y, f32 scale) {
+    if (rank < 0 || rank >= NUM_PLAYERS) return;
+    // Use the full eight-place artwork without the legacy four-player HUD tables.
+    FrameInterpolation_RecordOpenChild("Expanded race position", playerId);
+    // Map the split-screen coordinate across the full UI width. The ordinary
+    // place renderer anchors to the window's left/right edge, which would move
+    // the middle column's number outside its viewport in widescreen windows.
+    const f32 uiLeft = OTRGetDimensionFromLeftEdge(0);
+    const f32 uiWidth = OTRGetDimensionFromRightEdge(SCREEN_WIDTH) - uiLeft;
+    func_80042330_unchanged((s32) (uiLeft + x * uiWidth / SCREEN_WIDTH), y, 0U, scale);
+    gSPDisplayList(gDisplayListHead++, D_0D007A60);
+    func_8004B414(255, D_800E55F8[rank], 0, 255);
+    func_80049970((u8*) common_texture_hud_place[rank], D_0D0068F0, 128, 64, 128, 64);
+    FrameInterpolation_RecordCloseChild();
+}
+
+void draw_expanded_race_lap(s32 playerId, s32 lap, s32 x, s32 y, f32 scale) {
+    if (lap < 0 || lap > 2) return;
+    static Vtx lapWord[4] = {
+        { { { -16, -4, 0 }, 0, { 0, 0 }, { 255, 255, 255, 255 } } },
+        { { { 16, -4, 0 }, 0, { 1024, 0 }, { 255, 255, 255, 255 } } },
+        { { { 16, 4, 0 }, 0, { 1024, 256 }, { 255, 255, 255, 255 } } },
+        { { { -16, 4, 0 }, 0, { 0, 256 }, { 255, 255, 255, 255 } } },
+    };
+    static Vtx lapNumber[4] = {
+        { { { -16, -8, 0 }, 0, { 0, 0 }, { 255, 255, 255, 255 } } },
+        { { { 16, -8, 0 }, 0, { 1024, 0 }, { 255, 255, 255, 255 } } },
+        { { { 16, 8, 0 }, 0, { 1024, 512 }, { 255, 255, 255, 255 } } },
+        { { { -16, 8, 0 }, 0, { 0, 512 }, { 255, 255, 255, 255 } } },
+    };
+    const f32 uiLeft = OTRGetDimensionFromLeftEdge(0);
+    const f32 uiWidth = OTRGetDimensionFromRightEdge(SCREEN_WIDTH) - uiLeft;
+    const s32 uiX = (s32) (uiLeft + x * uiWidth / SCREEN_WIDTH);
+    FrameInterpolation_RecordOpenChild("Expanded lap counter", playerId);
+    gDPPipeSync(gDisplayListHead++);
+    gSPClearGeometryMode(gDisplayListHead++, G_ZBUFFER | G_CULL_FRONT | G_CULL_BACK | G_LIGHTING);
+    gDPSetTextureLUT(gDisplayListHead++, G_TT_NONE);
+    gDPSetTextureFilter(gDisplayListHead++, G_TF_POINT);
+    gDPSetCombineMode(gDisplayListHead++, G_CC_DECALRGBA, G_CC_DECALRGBA);
+    gDPSetRenderMode(gDisplayListHead++, G_RM_AA_XLU_SURF, G_RM_AA_XLU_SURF2);
+    gSPTexture(gDisplayListHead++, 0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_ON);
+    func_80042330_unchanged(uiX, y - (s32) (12 * scale), 0U, scale);
+    load_texture_block_rgba16_mirror((u8*) common_texture_hud_lap, 32, 8);
+    gSPVertex(gDisplayListHead++, (uintptr_t) lapWord, 4, 0);
+    gSPDisplayList(gDisplayListHead++, common_rectangle_display);
+    func_80042330_unchanged(uiX, y, 0U, scale);
+    load_texture_block_rgba16_mirror((u8*) gHudLapTextures[lap], 32, 16);
+    gSPVertex(gDisplayListHead++, (uintptr_t) lapNumber, 4, 0);
+    gSPDisplayList(gDisplayListHead++, common_rectangle_display);
+    gSPTexture(gDisplayListHead++, 1, 1, 0, G_TX_RENDERTILE, G_OFF);
+    FrameInterpolation_RecordCloseChild();
+}
+
 void func_8004E998(s32 playerId) {
+    const s32 rank = gGPCurrentRaceRankByPlayerId[playerId];
+    if (rank < 0 || rank >= NUM_PLAYERS) {
+        return;
+    }
     if (playerHUD[playerId].unk_81 != 0) {
-        FrameInterpolation_RecordOpenChild("Player place HUD2", playerId);
-        if (playerHUD[playerId].lapCount != 3) {
-            func_8004A384(playerHUD[playerId].rankX + playerHUD[playerId].slideRankX,
-                          playerHUD[playerId].rankY + playerHUD[playerId].slideRankY, 0U,
-                          playerHUD[playerId].rankScaling, 0x000000FF,
-                          D_800E5618[gGPCurrentRaceRankByPlayerId[playerId]], 0, 0x000000FF,
-                          (u8*) D_0D015258[gGPCurrentRaceRankByPlayerId[playerId]], D_0D006030, 0x00000040, 0x00000040,
-                          0x00000040, 0x00000040);
-        } else {
-            func_8004A384(playerHUD[playerId].rankX + playerHUD[playerId].slideRankX,
-                          playerHUD[playerId].rankY + playerHUD[playerId].slideRankY, 0U,
-                          playerHUD[playerId].rankScaling, 0x000000FF, D_800E5618[D_80165598], 0, 0x000000FF,
-                          (u8*) D_0D015258[gGPCurrentRaceRankByPlayerId[playerId]], D_0D006030, 0x00000040, 0x00000040,
-                          0x00000040, 0x00000040);
+        // The compact multiplayer font/color tables contain only places 1-4.
+        // GP can now put human racers in 5-8: use the full eight-place assets
+        // at the same height instead of indexing past either compact table.
+        const bool fullPlaceTexture = rank >= 4;
+        s32 colorIndex = playerHUD[playerId].lapCount != 3 ? rank : D_80165598;
+        if (colorIndex < 0 || colorIndex >= (fullPlaceTexture ? NUM_PLAYERS : 4)) {
+            colorIndex = rank;
         }
+        const s32 textureWidth = fullPlaceTexture ? 128 : 64;
+        FrameInterpolation_RecordOpenChild("Player place HUD2", playerId);
+        func_8004A384(playerHUD[playerId].rankX + playerHUD[playerId].slideRankX,
+                      playerHUD[playerId].rankY + playerHUD[playerId].slideRankY, 0U,
+                      playerHUD[playerId].rankScaling, 0x000000FF,
+                      fullPlaceTexture ? D_800E55F8[colorIndex] : D_800E5618[colorIndex], 0, 0x000000FF,
+                      (u8*) (fullPlaceTexture ? common_texture_hud_place[rank] : D_0D015258[rank]),
+                      fullPlaceTexture ? D_0D0068F0 : D_0D006030, textureWidth, 64, textureWidth, 64);
         FrameInterpolation_RecordCloseChild();
     }
 }
@@ -2656,6 +2731,150 @@ void draw_minimap_character(s32 arg0, s32 playerId, s32 characterId) {
 #else
 GLOBAL_ASM("asm/non_matchings/render_objects/draw_minimap_character.s")
 #endif
+
+static s32 expanded_hud_x(f32 x) {
+    const f32 left = OTRGetDimensionFromLeftEdge(0);
+    const f32 width = OTRGetDimensionFromRightEdge(SCREEN_WIDTH) - left;
+    return (s32) (left + x * width / SCREEN_WIDTH);
+}
+
+void draw_expanded_minimap(s32 viewer, s32 count, const s32* order, s32 x, s32 y, s32 maxWidth, s32 maxHeight) {
+    if (viewer < 0 || viewer >= NUM_PLAYERS || count < 1 || count > NUM_PLAYERS || CM_GetProps() == NULL) return;
+    const MinimapProps* map = &CM_GetProps()->Minimap;
+    if (map->Texture == NULL || map->Width <= 0 || map->Height <= 0) return;
+    const s32 width = map->Width, height = map->Height;
+    // Track::ResizeMinimap changes the display dimensions to the native map
+    // coordinate system. Texture sampling must still cover the entire asset.
+    const s32 textureWidth = ResourceGetTexWidthByName(map->Texture);
+    const s32 textureHeight = ResourceGetTexHeightByName(map->Texture);
+    if (textureWidth <= 0 || textureHeight <= 0) return;
+    f32 scale = (f32) maxWidth / width;
+    if (scale > (f32) maxHeight / height) scale = (f32) maxHeight / height;
+    // Keep vertices alive until the graphics interpreter consumes the frame.
+    static Vtx maps[NUM_PLAYERS][4];
+    const s16 sLeft = gIsMirrorMode ? textureWidth * 32 : 0;
+    const s16 sRight = gIsMirrorMode ? 0 : textureWidth * 32;
+    const Vtx vertices[4] = {
+        { { { -width / 2, -height / 2, 0 }, 0, { sLeft, 0 }, { 255, 255, 255, 255 } } },
+        { { { width - width / 2, -height / 2, 0 }, 0, { sRight, 0 }, { 255, 255, 255, 255 } } },
+        { { { width - width / 2, height - height / 2, 0 }, 0, { sRight, textureHeight * 32 }, { 255, 255, 255, 255 } } },
+        { { { -width / 2, height - height / 2, 0 }, 0, { sLeft, textureHeight * 32 }, { 255, 255, 255, 255 } } },
+    };
+    for (s32 i = 0; i < 4; ++i) maps[viewer][i] = vertices[i];
+    FrameInterpolation_RecordOpenChild("Expanded minimap", viewer);
+    const s32 centerX = expanded_hud_x(x);
+    func_80042330_unchanged(centerX, y, 0U, scale);
+    gSPDisplayList(gDisplayListHead++, D_0D007A60);
+    // The native sprite setup enables half-scale texture coordinates (0x8000).
+    // Our quad already uses the actual image UVs, so use full scale here or
+    // only its upper-left quarter is stretched across the entire minimap.
+    gSPTexture(gDisplayListHead++, 0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_ON);
+    gSPClearGeometryMode(gDisplayListHead++, G_ZBUFFER | G_CULL_FRONT | G_CULL_BACK);
+    gDPSetTextureLUT(gDisplayListHead++, G_TT_NONE);
+    func_8004B414(map->Colour.r, map->Colour.g, map->Colour.b, 255);
+    func_80049970((u8*) map->Texture, maps[viewer], textureWidth, textureHeight, textureWidth, textureHeight);
+    // Apply the same uniform scale to the outline and marker coordinates.
+    // Expanding each marker X separately for widescreen moved it off the map.
+    const f32 left = centerX - (width / 2) * scale;
+    const f32 top = y - (height / 2) * scale;
+    const f32 markerScale = scale < .45f ? .45f : scale;
+    if (gModeSelection != BATTLE) {
+        func_80042330_unchanged((s32) (left + (map->PlayerX + map->FinishlineX) * scale),
+                               (s32) (top + (map->PlayerY + map->FinishlineY) * scale), 0U, markerScale);
+        gSPDisplayList(gDisplayListHead++, D_0D007928);
+        func_80045D0C((u8*) common_texture_minimap_finish_line,
+                      (Vtx*) LOAD_ASSET(common_vtx_player_minimap_icon), 8, 8, 8);
+    }
+    // Draw the viewing player last, so their marker stays visible in a pack.
+    for (s32 pass = 0; pass < 2; ++pass) {
+        for (s32 rank = count - 1; rank >= 0; --rank) {
+            const s32 playerId = order[rank];
+            if (playerId < 0 || playerId >= count || (playerId == viewer) != (pass == 1)) continue;
+            const Player* player = &gPlayers[playerId];
+            if (!(player->type & PLAYER_EXISTS) || player->characterId < 0 || player->characterId >= 8) continue;
+            if (gModeSelection == BATTLE && gPlayerBalloonCount[playerId] < 0) continue;
+            const s32 markerX = (s32) (left + (map->PlayerX + player->pos[0] * map->PlayerScaleFactor) * scale);
+            const s32 markerY = (s32) (top + (map->PlayerY + player->pos[2] * map->PlayerScaleFactor) * scale);
+            FrameInterpolation_RecordOpenChild("Expanded minimap racer", viewer * NUM_PLAYERS + playerId);
+            if (playerId == viewer) {
+                func_80046424(markerX, markerY, player->rotation[1] + 0x8000, markerScale * 1.2f,
+                              (u8*) common_texture_minimap_kart_character[player->characterId],
+                              (Vtx*) LOAD_ASSET(common_vtx_player_minimap_icon), 8, 8, 8, 8);
+            } else {
+                const bool cpu = (player->type & PLAYER_CPU) != 0;
+                func_800463B0(markerX, markerY, cpu ? 0 : player->rotation[1] + 0x8000, markerScale,
+                              (u8*) (cpu ? common_texture_minimap_progress[player->characterId] :
+                                           common_texture_minimap_kart_character[player->characterId]),
+                              (Vtx*) LOAD_ASSET(common_vtx_player_minimap_icon), 8, 8, 8, 8);
+            }
+            FrameInterpolation_RecordCloseChild();
+        }
+    }
+    FrameInterpolation_RecordCloseChild();
+}
+
+void draw_expanded_race_progress(s32 viewer, s32 count, const s32* order, s32 x, s32 y, s32 width, f32 scale) {
+    if (viewer < 0 || viewer >= NUM_PLAYERS || count < 1 || count > NUM_PLAYERS) return;
+    FrameInterpolation_RecordOpenChild("Expanded race progress", viewer);
+    const s32 lap = gLapCountByPlayerId[viewer];
+    const s32 r = lap >= 1 ? 255 : 0, g = lap == 1 ? 255 : 0, b = lap <= 0 ? 255 : 0;
+    static Vtx lines[NUM_PLAYERS][4];
+    const s32 halfWidth = (expanded_hud_x(x + width) - expanded_hud_x(x)) / 2;
+    const Vtx line[4] = {
+        { { { -halfWidth, -1, 0 }, 0, { 0, 0 }, { r, g, b, 255 } } },
+        { { { halfWidth, -1, 0 }, 0, { 0, 0 }, { r, g, b, 255 } } },
+        { { { halfWidth, 1, 0 }, 0, { 0, 0 }, { r, g, b, 255 } } },
+        { { { -halfWidth, 1, 0 }, 0, { 0, 0 }, { r, g, b, 255 } } },
+    };
+    for (s32 i = 0; i < 4; ++i) lines[viewer][i] = line[i];
+    func_80042330_unchanged(expanded_hud_x(x + width / 2.f), y + 3, 0U, 1.f);
+    gDPPipeSync(gDisplayListHead++);
+    gSPClearGeometryMode(gDisplayListHead++, G_ZBUFFER | G_CULL_FRONT | G_CULL_BACK | G_LIGHTING);
+    gSPTexture(gDisplayListHead++, 1, 1, 0, G_TX_RENDERTILE, G_OFF);
+    gDPSetCycleType(gDisplayListHead++, G_CYC_1CYCLE);
+    gDPSetCombineMode(gDisplayListHead++, G_CC_SHADE, G_CC_SHADE);
+    gDPSetRenderMode(gDisplayListHead++, G_RM_AA_XLU_SURF, G_RM_AA_XLU_SURF2);
+    gSPVertex(gDisplayListHead++, (uintptr_t) lines[viewer], 4, 0);
+    gSP2Triangles(gDisplayListHead++, 0, 1, 2, 0, 0, 2, 3, 0);
+    for (s32 pass = 0; pass < 2; ++pass) {
+        for (s32 rank = count - 1; rank >= 0; --rank) {
+            const s32 playerId = order[rank];
+            if (playerId < 0 || playerId >= count || (playerId == viewer) != (pass == 1)) continue;
+            const s32 character = gPlayers[playerId].characterId;
+            if (character < 0 || character >= 8 || !(gPlayers[playerId].type & PLAYER_EXISTS)) continue;
+            f32 progress = gLapCompletionPercentByPlayerId[playerId];
+            if (gLapCountByPlayerId[playerId] >= 3) progress = 1.f;
+            if (progress < 0.f) progress = 0.f;
+            if (progress > 1.f) progress = 1.f;
+            const s32 iconX = expanded_hud_x(x + progress * width);
+            const s32 iconY = y + (rank & 1) * 6;
+            FrameInterpolation_RecordOpenChild("Expanded progress racer", viewer * NUM_PLAYERS + playerId);
+            func_80042330_unchanged(iconX, iconY, 0U, scale);
+            gSPDisplayList(gDisplayListHead++, D_0D007DB8);
+            set_transparency(255);
+            gDPLoadTLUT_pal256(gDisplayListHead++, gPortraitTLUTs[character]);
+            rsp_load_texture(gPortraitTextures[character], 32, 32);
+            gSPDisplayList(gDisplayListHead++, D_0D0069E0);
+            if (playerId == viewer) {
+                gSPDisplayList(gDisplayListHead++, D_0D007A60);
+                func_8004B35C(255, 255, 0, 255);
+                func_80044924((u8*) common_texture_character_portrait_border, 32, 32);
+                gSPDisplayList(gDisplayListHead++, D_0D0069E0);
+            }
+            // Native tiny rank badges remain distinct for duplicate characters.
+            func_80042330_unchanged(iconX - (s32) (10 * scale), iconY + (s32) (10 * scale), 0U, scale * 2);
+            gSPDisplayList(gDisplayListHead++, D_0D007DB8);
+            gSPDisplayList(gDisplayListHead++, D_0D007CB8);
+            set_transparency(255);
+            gDPLoadTLUT_pal256(gDisplayListHead++, common_tlut_hud_type_C_rank_tiny_font);
+            rsp_load_texture((u8*) common_texture_hud_type_C_rank_tiny_font[rank + 1], 8, 8);
+            gSPDisplayList(gDisplayListHead++, D_0D006950);
+            FrameInterpolation_RecordCloseChild();
+        }
+    }
+    gSPTexture(gDisplayListHead++, 1, 1, 0, G_TX_RENDERTILE, G_OFF);
+    FrameInterpolation_RecordCloseChild();
+}
 
 // WTF is up with the gPlayerOne access in this function?
 void func_8004F3E4(s32 arg0) {

@@ -16,6 +16,7 @@
 #include "effects.h"
 #include "sounds.h"
 #include "port/Game.h"
+#include "port/LocalMultiplayer.h"
 
 void copy_collision(struct Collision* src, struct Collision* dest) {
     dest->unk30 = src->unk30;
@@ -979,7 +980,8 @@ void check_player_use_item(void) {
     struct Controller* controller;
     struct Controller* loopController;
 
-    for (player = &gPlayers[0], loopController = &gControllers[0], target = &gControllers[4]; loopController != target;
+    const s32 humanCount = LocalMP_IsActive() ? LocalMP_Count() : 4;
+    for (player = &gPlayers[0], loopController = &gControllers[0], target = &gControllers[humanCount]; loopController != target;
          player++, loopController++) {
         controller = loopController;
         if (prevent_item_use(player) == false) {

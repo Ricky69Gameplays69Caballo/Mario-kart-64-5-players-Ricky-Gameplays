@@ -449,6 +449,16 @@ void func_8009B954(MenuTexture*);
 void func_8009B998(void);
 Gfx* func_8009B9D0(Gfx*, MenuTexture*);
 Gfx* render_menu_textures(Gfx*, MenuTexture*, s32, s32);
+Gfx* render_menu_textures_alt(Gfx*, MenuTexture*, s32, s32);
+void draw_expanded_player_card(s32 column, s32 row);
+void draw_expanded_menu_background(void);
+void draw_expanded_character_select(const s32* characters, const u8* ready, s32 count, s32 allReady);
+void draw_expanded_battle_results(const s32* characters, const s32* wins, s32 count, s32 winner,
+                                  s32 choice, MenuItem* cursor);
+void draw_expanded_course_select(s32 cup, s32 previewTrack, s32 mode, s32 stage, s32 engineClass);
+void draw_expanded_menu_title(void);
+void draw_expanded_menu_button(s32 column, s32 row, s32 kind, s32 selected, s32 confirmed);
+void draw_expanded_menu_card_base(s32 column, s32 row, s32 selected, s32 confirmed);
 Gfx* func_8009BC9C(Gfx*, MenuTexture*, s32, s32, s32, s32);
 Gfx* print_letter(Gfx*, MenuTexture*, f32, f32, s32, f32, f32);
 Gfx* print_letter_wide_right(Gfx* arg0, MenuTexture* glyphTexture, f32 arg2, f32 arg3, s32 mode, f32 scaleX,

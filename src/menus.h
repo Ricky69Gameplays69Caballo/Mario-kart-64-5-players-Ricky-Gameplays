@@ -269,10 +269,10 @@ extern u32 sVIGammaOffDitherOn;
 
 extern const s8 sScreenModePlayerTable[5];
 extern const s8 sScreenModePlayerCount[5];
-extern const s8 gPlayerModeSelection[];
-extern const s8 sGameModePlayerColumnDefault[][3];
-extern const s8 sGameModePlayerColumnExtra[][3];
-extern const s32 gGameModePlayerSelection[][3];
+extern s8 gPlayerModeSelection[];
+extern s8 sGameModePlayerColumnDefault[][3];
+extern s8 sGameModePlayerColumnExtra[][3];
+extern s32 gGameModePlayerSelection[][3];
 extern const s8 sCharacterGridOrder[8];
 extern const s16 gCupCourseOrder[NUM_CUPS][NUM_COURSES_PER_CUP];
 

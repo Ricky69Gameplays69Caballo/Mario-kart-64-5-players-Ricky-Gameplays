@@ -24,6 +24,7 @@
 #include "racing/memory.h"
 #include <string.h>
 #include "port/Game.h"
+#include "port/LocalMultiplayer.h"
 
 // For init podium ceremony
 #include "ceremony_and_credits.h"
@@ -73,26 +74,26 @@ s32 func_80281880(s32 arg0) {
 }
 
 void func_802818BC(void) {
-    s32 temp_v0;
-    UNUSED s32 pad;
-    s32 sp1C;
-    s32 temp_v0_2;
-
-    if (gPlayerCount != TWO_PLAYERS_SELECTED) {
-        D_802874D8.unk1D = func_80281880(0);
-        D_802874D8.unk1E = gCharacterSelections[0];
+    s32 character;
+    s32 rank;
+    if (LocalMP_CeremonyResult(&character, &rank)) {
+        // Several participants can share a character; their cup ranks cannot
+        // be reconstructed by searching the character-ID podium array.
+        D_802874D8.unk1E = character;
+        D_802874D8.unk1D = rank;
         return;
     }
-    // weird pattern but if it matches it matches
-    temp_v0 = sp1C = func_80281880(0);
-    temp_v0_2 = func_80281880(1);
-    if (sp1C < temp_v0_2) {
-        D_802874D8.unk1E = gCharacterSelections[0];
-        D_802874D8.unk1D = temp_v0;
-    } else {
-        D_802874D8.unk1E = gCharacterSelections[1];
-        D_802874D8.unk1D = temp_v0_2;
+    s32 bestHuman = 0;
+    s32 bestRank = func_80281880(0);
+    for (s32 human = 1; human < gPlayerCount; human++) {
+        const s32 rank = func_80281880(human);
+        if (rank <= bestRank) {
+            bestHuman = human;
+            bestRank = rank;
+        }
     }
+    D_802874D8.unk1E = gCharacterSelections[bestHuman];
+    D_802874D8.unk1D = bestRank;
 }
 
 void setup_podium_ceremony(void) {

@@ -1,3 +1,4 @@
+#include "port/LocalMultiplayer.h"
 #include <libultraship/libultraship.h>
 #include "TourCamera.h"
 #include "port/Engine.h"
@@ -197,7 +198,7 @@ void TourCamera::SetViewProjection() {
     // Perspective (camera movement)
     FrameInterpolation_RecordOpenChild("tourcam_persp", FrameInterpolation_GetCameraEpoch());
     guPerspective(&PerspectiveMatrix, &perspNorm, _camera->fieldOfView, gScreenAspect,
-                  CM_GetProps()->NearPersp, CM_GetProps()->FarPersp, 1.0f);
+                  CM_GetProps()->NearPersp, RacerRenderDistance_FarPlane(CM_GetProps()->FarPersp), 1.0f);
     gSPPerspNormalize(gDisplayListHead++, perspNorm);
     gSPMatrix(gDisplayListHead++, &PerspectiveMatrix, G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_PROJECTION);
     FrameInterpolation_RecordCloseChild();

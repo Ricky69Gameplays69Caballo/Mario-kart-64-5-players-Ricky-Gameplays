@@ -1,3 +1,4 @@
+#include "port/LocalMultiplayer.h"
 #include "Sky.h"
 
 #include <libultraship.h>
@@ -64,11 +65,13 @@ Vtx Sky::mSkyboxScreenFour[8] = { // D_802B8A10
     { { { 0, 120, -1 }, 0, { 0, 0 }, { 0x00, 0xDC, 0x00, 0xFF } } },
 };
 
+static Vtx sExtraSkyboxes[4][8];
 Sky* Sky::Instance;
 
 Sky::Sky() {
     Instance = this;
     guMtxIdent(&mSkyboxMatrix);
+    for (auto& sky : sExtraSkyboxes) std::copy(std::begin(mSkyboxScreenOne), std::end(mSkyboxScreenOne), sky);
 }
 
 Sky* Sky::GetSky() {
@@ -179,6 +182,9 @@ void Sky::Draw(ScreenContext* screen) { // func_802A4A0C(Vtx* vtx, ScreenContext
         case 3:
             vtx = mSkyboxScreenFour;
             break;
+        default:
+            vtx = sExtraSkyboxes[(screen - gScreenContexts) - 4];
+            break;
     }
 
     this->SetColours(vtx); //func_802A450C(vtx);
@@ -200,7 +206,7 @@ void Sky::Draw(ScreenContext* screen) { // func_802A4A0C(Vtx* vtx, ScreenContext
     sp5C[0] = 0.0f;
     sp5C[1] = 0.0f;
     sp5C[2] = 30000.0f;
-    func_802B5564(matrix1, &sp128, camera->unk_B4, gScreenAspect, CM_GetProps()->NearPersp, CM_GetProps()->FarPersp,
+    func_802B5564(matrix1, &sp128, camera->unk_B4, gScreenAspect, CM_GetProps()->NearPersp, RacerRenderDistance_FarPlane(CM_GetProps()->FarPersp),
                   1.0f);
     func_802B5794(matrix2, camera->pos, camera->lookAt);
     mtxf_multiplication(matrix3, matrix1, matrix2);
@@ -256,6 +262,9 @@ void Sky::DrawFloor(ScreenContext* screen) { // func_802A487C
             break;        
         case 3:
             vtx = mSkyboxScreenFour;
+            break;
+        default:
+            vtx = sExtraSkyboxes[(screen - gScreenContexts) - 4];
             break;
     }
 

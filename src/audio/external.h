@@ -339,11 +339,11 @@ extern struct Unk_8018EFD8 D_8018EFD8[];
 // These are indexes for D_8018EFD8, but their purpose is unknown
 extern u8 D_8018FB90;
 extern u8 D_8018FB91;
-extern Camera* gCopyCamera[4];
-extern Vec3f gVelocityCamera[4];
-extern Vec3f gCameraLastPos[4];
+extern Camera* gCopyCamera[NUM_PLAYERS];
+extern Vec3f gVelocityCamera[NUM_PLAYERS];
+extern Vec3f gCameraLastPos[NUM_PLAYERS];
 extern u8 D_8018FC08;
-extern s16 D_8018FC10[4][2];
+extern s16 D_8018FC10[NUM_PLAYERS][2];
 
 extern struct SoundCharacteristics sSoundBanks[SOUND_BANK_COUNT][20];
 extern u8 sSoundBankUsedListBack[SOUND_BANK_COUNT];

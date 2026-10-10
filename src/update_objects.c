@@ -1,4 +1,5 @@
 #include <libultraship.h>
+#include "port/LocalMultiplayer.h"
 #include <macros.h>
 #include <defines.h>
 #include <decode.h>
@@ -2412,8 +2413,8 @@ s32 func_8007B040(s32 objectIndex, s32 playerId) {
     s32 var_t3;
     s32 temp_a0;
     s32 item;
-    s32 sp50[4];
-    s32 sp40[4];
+    s32 sp50[8];
+    s32 sp40[8];
     s32 var_v1_2;
     Player* sp38;
     s16 temp_a1;
@@ -2440,7 +2441,7 @@ s32 func_8007B040(s32 objectIndex, s32 playerId) {
         var_t3 = 1;
         gObjectList[objectIndex].textureListIndex = gObjectList[objectIndex].unk_0A2 = item;
     } else {
-        for (var_v1_2 = 0; var_v1_2 < gPlayerCountSelection1; var_v1_2++) {
+        for (var_v1_2 = 0; var_v1_2 < LocalMP_Count(); var_v1_2++) {
             temp_a0 = gItemWindowObjectByPlayerId[var_v1_2];
             if (var_v1_2 != playerId) {
                 if (gObjectList[temp_a0].type != 0) {
@@ -3105,7 +3106,7 @@ void func_800842C8(void) {
     D_8016582C[0] += 0x2000;
     D_8016582C[1] += 0x1000;
     D_8016582C[2] += 0x1800;
-    for (playerId = 0; playerId < gPlayerCountSelection1; playerId++) {
+    for (playerId = 0; playerId < LocalMP_Count(); playerId++) {
         objectIndex = gIndexLakituList[playerId];
         if (func_80072320(objectIndex, 0x00000020) != 0) {
             func_800722CC(objectIndex, 0x00000020);

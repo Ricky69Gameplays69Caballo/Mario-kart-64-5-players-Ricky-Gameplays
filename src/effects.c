@@ -18,6 +18,7 @@
 #include "spawn_players.h"
 #include "menu_items.h"
 #include "port/Game.h"
+#include "port/LocalMultiplayer.h"
 
 s32 D_8018D900[8];
 s16 D_8018D920[8];
@@ -1624,6 +1625,9 @@ void func_80090178(Player* player, s8 playerId, Vec3f arg2, Vec3f arg3) {
     f32 sp18[4] = { 10.0f, -10.0f, -575.0f, 575.0f };
     f32 sp08[4] = { 575.0f, -575.0f, 10.0f, -10.0f };
 
+    // Native arena rescue pads are four cardinal positions. Extra players use
+    // those same valid pads instead of indexing beyond their four-entry tables.
+    const s8 battleSlot = playerId & 3;
     if (IsYoshiValley()) {
         test = player->nearestPathPointId;
         temp_v1 = &gTrackPaths[gCopyPathIndexByPlayerId[playerId]][test];
@@ -1637,33 +1641,33 @@ void func_80090178(Player* player, s8 playerId, Vec3f arg2, Vec3f arg3) {
         arg3[1] = temp_v1->y;
         arg3[2] = temp_v1->z;
     } else if (IsBlockFort()) {
-        arg2[0] = spF8[playerId];
+        arg2[0] = spF8[battleSlot];
         arg2[1] = 0.0f;
-        arg2[2] = spE8[playerId];
-        arg3[0] = spD8[playerId];
+        arg2[2] = spE8[battleSlot];
+        arg3[0] = spD8[battleSlot];
         arg3[1] = 0.0f;
-        arg3[2] = spC8[playerId];
+        arg3[2] = spC8[battleSlot];
     } else if (IsSkyscraper()) {
-        arg2[0] = spB8[playerId];
+        arg2[0] = spB8[battleSlot];
         arg2[1] = 480.0f;
-        arg2[2] = spA8[playerId];
-        arg3[0] = sp98[playerId];
+        arg2[2] = spA8[battleSlot];
+        arg3[0] = sp98[battleSlot];
         arg3[1] = 480.0f;
-        arg3[2] = sp88[playerId];
+        arg3[2] = sp88[battleSlot];
     } else if (IsDoubleDeck()) {
-        arg2[0] = sp78[playerId];
+        arg2[0] = sp78[battleSlot];
         arg2[1] = 0.0f;
-        arg2[2] = sp68[playerId];
-        arg3[0] = sp58[playerId];
+        arg2[2] = sp68[battleSlot];
+        arg3[0] = sp58[battleSlot];
         arg3[1] = 0.0f;
-        arg3[2] = sp48[playerId];
+        arg3[2] = sp48[battleSlot];
     } else if (IsBigDonut()) {
-        arg2[0] = sp38[playerId];
+        arg2[0] = sp38[battleSlot];
         arg2[1] = 200.0f;
-        arg2[2] = sp28[playerId];
-        arg3[0] = sp18[playerId];
+        arg2[2] = sp28[battleSlot];
+        arg3[0] = sp18[battleSlot];
         arg3[1] = 200.0f;
-        arg3[2] = sp08[playerId];
+        arg3[2] = sp08[battleSlot];
     } else {
         test = player->nearestPathPointId;
         temp_v1 = &gTrackPaths[0][test];
@@ -1674,6 +1678,12 @@ void func_80090178(Player* player, s8 playerId, Vec3f arg2, Vec3f arg3) {
         arg3[0] = temp_v1->x;
         arg3[1] = temp_v1->y;
         arg3[2] = temp_v1->z;
+    }
+    if (LocalMP_IsActive() && gModeSelection == BATTLE && battleSlot + 4 < LocalMP_Count()) {
+        const f32 offset = playerId < 4 ? -45.0f : 45.0f;
+        const s32 axis = battleSlot < 2 ? 0 : 2;
+        arg2[axis] += offset;
+        arg3[axis] += offset;
     }
 }
 

@@ -1,3 +1,4 @@
+#include "port/LocalMultiplayer.h"
 #include <libultraship.h>
 #include <macros.h>
 #include <memory.h>
@@ -51,6 +52,14 @@ void init_hud(void) {
         case SCREEN_MODE_3P_4P_SPLITSCREEN:
             init_hud_three_four_player();
             break;
+    }
+    if (LocalMP_IsActive()) {
+        for (s32 i = 4; i < LocalMP_Count(); i++) {
+            playerHUD[i] = playerHUD[0];
+              func_8007055C(&gScreenContexts[i]);
+            find_unused_obj_index(&gItemWindowObjectByPlayerId[i]);
+            init_item_window(gItemWindowObjectByPlayerId[i]);
+        }
     }
     func_80070148();
 }
@@ -395,6 +404,13 @@ void func_8006FA94(void) {
                 D_8018D2AC = 10;
             }
             break;
+    }
+    if (gModeSelection == GRAND_PRIX && gPlayerCount >= 3) {
+        // These player counts originally supported only VS/Battle, whose
+        // short intro delays made the new GP sessions start prematurely.
+        // Match the existing 1P/2P GP HUD and starter-Lakitu delays.
+        D_8018D178 = 150;
+        D_8018D180 = 240;
     }
     if (gEnableDebugMode == 0) {
         D_8016576A = 0;

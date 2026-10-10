@@ -16,6 +16,7 @@ include(cmake/SetCmakeVar.cmake)
 # add_compile_options(-fsanitize=address) add_link_options(-fsanitize=address)
 
 set(YAML_CPP_STATIC_DEFINE ON)
+include(cmake/CombinedControllerPatch.cmake)
 include(libultraship/cmake/cvars.cmake)
 
 if(WIN32)
@@ -247,7 +248,7 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch")
   )
 
   ExternalProject_Get_Property(TorchExternal install_dir)
-  if(MSVC)
+  if(MSVC AND CMAKE_CONFIGURATION_TYPES)
     set(TORCH_EXECUTABLE
         ${install_dir}/src/TorchExternal-build/$<CONFIGURATION>/torch)
   else()

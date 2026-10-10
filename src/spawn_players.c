@@ -1,3 +1,4 @@
+#include "port/LocalMultiplayer.h"
 #include <defines.h>
 #include <mk64.h>
 #include <stubs.h>
@@ -281,6 +282,14 @@ void spawn_player(Player* player, s8 playerIndex, f32 startingRow, f32 startingC
     player->unk_23C = 0.0f;
 
     idx = playerIndex;
+
+    for (s32 view = 0; view < 8; view++) {
+        player->unk_048[view] = player->unk_050[view] = 0;
+        player->unk_0CC[view] = player->unk_0D4[view] = 0;
+        player->animFrameSelector[view] = player->animGroupSelector[view] = 0;
+        gLastAnimFrameSelector[view][idx] = gLastAnimGroupSelector[view][idx] = 0;
+        D_80165190[view][idx] = D_801651D0[view][idx] = D_80165150[view][idx] = 0;
+    }
 
     gLastAnimFrameSelector[0][idx] = 0;
     gLastAnimFrameSelector[1][idx] = 0;
@@ -699,6 +708,46 @@ void spawn_players_gp_two_player(f32* arg0, f32* arg1, f32 arg2) {
     func_80039AE4();
 }
 
+// Three/four human drivers share the normal eight-kart Grand Prix grid.
+static void spawn_players_gp_three_four_player(f32* x, f32* z, f32 y) {
+    const s32 humanCount = gPlayerCountSelection1;
+    func_80039DA4();
+
+    if (((GetCupCursorPosition() == TRACK_ONE) && (D_8016556E == 0)) || (gDemoMode == 1) ||
+        (gDebugMenuSelection == DEBUG_MENU_OPTION_SELECTED)) {
+        s16 available[NUM_PLAYERS];
+        s32 availableCount = 0;
+        for (s16 character = 0; character < NUM_PLAYERS; character++) {
+            bool selected = false;
+            for (s32 human = 0; human < humanCount; human++) {
+                if (gCharacterSelections[human] == character) {
+                    selected = true;
+                    break;
+                }
+            }
+            if (!selected) {
+                available[availableCount++] = character;
+            }
+        }
+        for (s32 cpu = 0; cpu < NUM_PLAYERS - humanCount; cpu++) {
+            const s32 choice = random_int(availableCount);
+            chooseCPUPlayers[cpu] = available[choice];
+            available[choice] = available[--availableCount];
+        }
+    }
+
+    D_8016556E = 0;
+    for (s32 racer = 0; racer < NUM_PLAYERS; racer++) {
+        const s32 grid = D_80165270[racer];
+        const s16 character = racer < humanCount ? gCharacterSelections[racer] : chooseCPUPlayers[racer - humanCount];
+        const u16 type = PLAYER_EXISTS | PLAYER_START_SEQUENCE |
+            (racer < humanCount ? (gDemoMode == 1 ? PLAYER_HUMAN_AND_CPU : PLAYER_HUMAN) : PLAYER_CPU);
+        spawn_player(&gPlayers[racer], racer, x[grid], z[grid], y, 32768.0f, character, type);
+    }
+    D_80164A28 = 0;
+    func_80039AE4();
+}
+
 void spawn_players_versus_two_player(f32* arg0, f32* arg1, f32 arg2) {
     spawn_player(gPlayerThree, 2, arg0[1], arg1[1], arg2, 32768.0f, gCharacterSelections[0],
                  PLAYER_START_SEQUENCE | PLAYER_CPU);
@@ -902,6 +951,46 @@ void spawn_and_set_player_spawns(void) {
         }
     }
 
+    if (LocalMP_IsActive()) {
+        if (gModeSelection == BATTLE) {
+            // Pair extra players beside the original four arena spawn pads.
+            const f32 radius = IsBigDonut() ? 575.0f : IsSkyscraper() ? 400.0f : IsDoubleDeck() ? 160.0f : 200.0f;
+            const f32 height = IsBigDonut() ? 200.0f : IsSkyscraper() ? 480.0f : IsDoubleDeck() ? 55.0f : 5.0f;
+            const f32 facing[] = {32768.0f, 0.0f, -16384.0f, 16384.0f};
+            const f32 donutFacing[] = {-16384.0f, 16384.0f, 0.0f, 32768.0f};
+            for (s32 i = 0; i < NUM_PLAYERS; ++i) {
+                const s32 pad = i & 3;
+                const f32 offset = pad + 4 < LocalMP_Count() ? (i < 4 ? -45.0f : 45.0f) : 0.0f;
+                const f32 x = pad < 2 ? offset : (pad == 2 ? -radius : radius);
+                const f32 z = pad < 2 ? (pad == 0 ? radius : -radius) : offset;
+                D_80165270[i] = i;
+                D_80165210[i] = x;
+                D_80165230[i] = z;
+                spawn_player(&gPlayers[i], i, x, z, height, IsBigDonut() ? donutFacing[pad] : facing[pad],
+                             gCharacterSelections[i], i < LocalMP_Count() ?
+                             PLAYER_EXISTS | PLAYER_START_SEQUENCE | PLAYER_HUMAN : 0);
+            }
+            D_80164A28 = 0;
+            func_80039AE4();
+            return; // Arenas have no race paths to initialize.
+        }
+        for (s32 i = 0; i < NUM_PLAYERS; i++) {
+            s32 grid = i < LocalMP_RacerCount() ? gGPCurrentRaceRankByPlayerId[i] : i;
+            if (grid < 0 || grid >= LocalMP_RacerCount()) grid = i;
+            D_80165270[i] = grid;
+            f32 x = sp5E + ((grid & 1) ? -20.0f : 20.0f);
+            f32 z = sp5C + 30.0f + 20.0f * grid;
+            D_80165210[i] = x;
+            D_80165230[i] = z;
+            spawn_player(&gPlayers[i], i, x, z, sp5A, 32768.0f, gCharacterSelections[i],
+                         i < LocalMP_RacerCount() ? PLAYER_EXISTS | PLAYER_START_SEQUENCE |
+                         (i < LocalMP_Count() ? PLAYER_HUMAN : PLAYER_CPU) : 0);
+        }
+        D_80164A28 = 0;
+        func_80039AE4();
+        init_players();
+        return;
+    }
     if ((gModeSelection != BATTLE) && (!IsPodiumCeremony())) {
         switch (gActiveScreenMode) {
             case SCREEN_MODE_1P:
@@ -971,6 +1060,13 @@ void spawn_and_set_player_spawns(void) {
 
             case SCREEN_MODE_3P_4P_SPLITSCREEN:
                 switch (gModeSelection) {
+                    case GRAND_PRIX:
+                        for (s32 grid = 0; grid < NUM_PLAYERS; grid++) {
+                            D_80165210[grid] = sp5E + ((grid & 1) ? -20.0f : 20.0f);
+                            D_80165230[grid] = sp5C + 30.0f + 20.0f * grid;
+                        }
+                        spawn_players_gp_three_four_player(D_80165210, D_80165230, sp5A);
+                        break;
                     case VERSUS:
                         D_80165210[0] = sp5E + 0x1E;
                         D_80165210[6] = sp5E - 0xA;
@@ -1162,23 +1258,9 @@ void func_8003CD98(Player* player, Camera* camera, s8 playerId, s8 screenId) {
             func_8002D268(player, camera, screenId, playerId);
         }
         func_8002934C(player, camera, screenId, playerId);
-        if ((screenId == 0) || (screenId == 1)) {
-            load_kart_palette(player, playerId, screenId, 0);
-            load_kart_palette(player, playerId, screenId, 1);
-            load_kart_texture(player, playerId, screenId, screenId, 0);
-#ifdef TARGET_N64
-            mio0decode((u8*) &gEncodedKartTexture[0][screenId][playerId],
-                       (u8*) &D_802BFB80.arraySize8[0][screenId][playerId]);
-#endif
-        } else {
-            load_kart_palette(player, playerId, screenId, 0);
-            load_kart_palette(player, playerId, screenId, 1);
-            load_kart_texture(player, (s8) (playerId + 4), screenId, (s8) (screenId - 2), 0);
-#ifdef TARGET_N64
-            mio0decode((u8*) &gEncodedKartTexture[0][screenId - 2][playerId + 4],
-                       (u8*) &D_802BFB80.arraySize8[0][screenId - 2][playerId + 4]);
-#endif
-        }
+        load_kart_palette(player, playerId, screenId, 0);
+        load_kart_palette(player, playerId, screenId, 1);
+        load_kart_texture(player, playerId, screenId, screenId, 0);
 
         gLastAnimFrameSelector[screenId][playerId] = player->animFrameSelector[screenId];
         gLastAnimGroupSelector[screenId][playerId] = player->animGroupSelector[screenId];
@@ -1226,7 +1308,7 @@ void spawn_players_and_cameras(void) {
         mode = 3;
     }
 
-    for (size_t i = 0; i < 4; i++) {
+    for (size_t i = 0; i < 8; i++) {
         D_80164A08[i] = 0;
         D_80164498[i] = 0;
     }
@@ -1236,6 +1318,8 @@ void spawn_players_and_cameras(void) {
     } else {
         spawn_multiplayer_cameras(mode);
     }
+
+    if (LocalMP_IsActive()) return;
 
     // Add freecam, tourcam, and lookbehind cameras
     Vec3f spawn = {player->pos[0], player->pos[1], player->pos[2]};
@@ -1320,6 +1404,7 @@ void spawn_multiplayer_cameras(u32 mode) {
             screens = 4;
             break;
     }
+    if (LocalMP_IsActive()) screens = LocalMP_Count();
     for (size_t i = 0; i < screens; i++) {
         Vec3f spawn = {gPlayers[i].pos[0], gPlayers[i].pos[1], gPlayers[i].pos[2]};
         camera = CM_AddCamera(spawn, gPlayers[i].rotation[1], mode);
@@ -1348,8 +1433,7 @@ void spawn_multiplayer_cameras(u32 mode) {
 }
 
 /**
- * Loads 8 players per screen in 1p/2p mode
- * Loads 4 players per screen in 3p/4p mode
+ * Grand Prix loads eight racers per viewport, including three/four-player races.
  */
 void load_kart_textures(void) {
     size_t screens = 0;
@@ -1366,9 +1450,18 @@ void load_kart_textures(void) {
             break;
     }
 
+    if (LocalMP_IsActive()) {
+        for (s8 screen = 0; screen < LocalMP_Count(); screen++) {
+            for (s8 racer = 0; racer < LocalMP_RacerCount(); racer++) {
+                func_8003CD98(&gPlayers[racer], gScreenContexts[screen].camera, racer, screen);
+            }
+        }
+        return;
+    }
     static const size_t playerCounts[4] = { 8, 8, 4, 4 };
+    const size_t racerCount = gModeSelection == GRAND_PRIX ? NUM_PLAYERS : playerCounts[gPlayerCountSelection1 - 1];
     for (size_t i = 0; i < screens; i++) {
-        for (size_t ply = 0; ply < playerCounts[gPlayerCountSelection1 - 1]; ply++) {
+        for (size_t ply = 0; ply < racerCount; ply++) {
             func_8003CD98(&gPlayers[ply], gScreenContexts[i].camera, ply, i);
         }
     }

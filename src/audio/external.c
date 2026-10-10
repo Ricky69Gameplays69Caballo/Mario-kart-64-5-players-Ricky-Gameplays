@@ -12,11 +12,17 @@
 #include "audio/port_eu.h"
 #include "code_800029B0.h"
 #include "code_80005FD0.h"
+#include "code_80057C60.h"
 #include "menu_items.h"
 #include <stdbool.h>
 #include "port/Game.h"
 #include "port/audio/HMAS.h"
 #include "engine/TrackBrowser.h"
+#include "objects.h"
+#include "main.h"
+#include "port/LocalMultiplayer.h"
+
+static bool sExpandedItemSpinPlaying = false;
 
 s8 D_8018EF10;
 UnkStruct8018EF18 D_8018EF18[16];
@@ -24,11 +30,11 @@ UnkStruct8018EF18 D_8018EF18[16];
 struct Unk_8018EFD8 D_8018EFD8[50];
 u8 D_8018FB90;
 u8 D_8018FB91;
-Camera* gCopyCamera[4];
-Vec3f gVelocityCamera[4];
-Vec3f gCameraLastPos[4];
+Camera* gCopyCamera[NUM_PLAYERS];
+Vec3f gVelocityCamera[NUM_PLAYERS];
+Vec3f gCameraLastPos[NUM_PLAYERS];
 u8 D_8018FC08;
-s16 D_8018FC10[4][2];
+s16 D_8018FC10[NUM_PLAYERS][2];
 struct Sound sSoundRequests[0x100];
 struct SoundCharacteristics sSoundBanks[SOUND_BANK_COUNT][20];
 u8 sSoundBankUsedListBack[SOUND_BANK_COUNT];
@@ -45,33 +51,33 @@ struct_D_801930D0_entry D_801930D0[3];
 
 u8 D_800E9DA0 = 0;
 UNUSED s32 D_800E9DA4[] = { 0, 0, 0, 0 };
-s32 D_800E9DB4[] = { 0, 0, 0, 0 };
-f32 D_800E9DC4[] = { 1.0f, 1.0f, 1.0f, 1.0f };
-f32 D_800E9DD4[] = { 0.0f, 0.0f, 0.0f, 0.0f };
-f32 D_800E9DE4[] = { 0.0f, 0.0f, 0.0f, 0.0f };
+s32 D_800E9DB4[] = { 0, 0, 0, 0 , 0, 0, 0, 0 };
+f32 D_800E9DC4[] = { 1.0f, 1.0f, 1.0f, 1.0f , 1.0f, 1.0f, 1.0f, 1.0f };
+f32 D_800E9DD4[] = { 0.0f, 0.0f, 0.0f, 0.0f , 0.0f, 0.0f, 0.0f, 0.0f };
+f32 D_800E9DE4[] = { 0.0f, 0.0f, 0.0f, 0.0f , 0.0f, 0.0f, 0.0f, 0.0f };
 f32 D_800E9DF4[] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
-s32 D_800E9E14[] = { 0, 0, 0, 0 };
-s32 D_800E9E24[] = { 0, 0, 0, 0 };
+s32 D_800E9E14[] = { 0, 0, 0, 0 , 0, 0, 0, 0 };
+s32 D_800E9E24[] = { 0, 0, 0, 0 , 0, 0, 0, 0 };
 s32 D_800E9E34[] = { 0, 0, 0, 0, 0, 0, 0, 0 };
-f32 D_800E9E54[] = { 0.0f, 0.0f, 0.0f, 0.0f };
-f32 D_800E9E64[] = { 0.0f, 0.0f, 0.0f, 0.0f };
-s32 D_800E9E74[] = { 0, 0, 0, 0 };
-s32 D_800E9E84[] = { 0, 0, 0, 0 };
-u32 D_800E9E94[] = { 0, 0, 0, 0 };
-s32 D_800E9EA4[] = { 0, 0, 0, 0 };
-f32 D_800E9EB4[] = { 0.0f, 0.0f, 0.0f, 0.0f };
-f32 D_800E9EC4[] = { 0.0f, 0.0f, 0.0f, 0.0f };
-f32 D_800E9ED4[] = { 0.0f, 0.0f, 0.0f, 0.0f };
-f32 D_800E9EE4[] = { 0.0f, 0.0f, 0.0f, 0.0f };
-f32 D_800E9EF4[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+f32 D_800E9E54[] = { 0.0f, 0.0f, 0.0f, 0.0f , 0.0f, 0.0f, 0.0f, 0.0f };
+f32 D_800E9E64[] = { 0.0f, 0.0f, 0.0f, 0.0f , 0.0f, 0.0f, 0.0f, 0.0f };
+s32 D_800E9E74[] = { 0, 0, 0, 0 , 0, 0, 0, 0 };
+s32 D_800E9E84[] = { 0, 0, 0, 0 , 0, 0, 0, 0 };
+u32 D_800E9E94[] = { 0, 0, 0, 0 , 0, 0, 0, 0 };
+s32 D_800E9EA4[] = { 0, 0, 0, 0 , 0, 0, 0, 0 };
+f32 D_800E9EB4[] = { 0.0f, 0.0f, 0.0f, 0.0f , 0.0f, 0.0f, 0.0f, 0.0f };
+f32 D_800E9EC4[] = { 0.0f, 0.0f, 0.0f, 0.0f , 0.0f, 0.0f, 0.0f, 0.0f };
+f32 D_800E9ED4[] = { 0.0f, 0.0f, 0.0f, 0.0f , 0.0f, 0.0f, 0.0f, 0.0f };
+f32 D_800E9EE4[] = { 0.0f, 0.0f, 0.0f, 0.0f , 0.0f, 0.0f, 0.0f, 0.0f };
+f32 D_800E9EF4[] = { 1.0f, 1.0f, 1.0f, 1.0f , 1.0f, 1.0f, 1.0f, 1.0f };
 f32 D_800E9F04[] = { 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
-f32 D_800E9F14[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+f32 D_800E9F14[] = { 1.0f, 1.0f, 1.0f, 1.0f , 1.0f, 1.0f, 1.0f, 1.0f };
 u8 D_800E9F24[] = { 0, 0, 0, 0, 0, 0, 0, 0 };
 u8 D_800E9F2C[NUM_PLAYERS] = { 0, 0, 0, 0, 0, 0, 0, 0 };
 f32 D_800E9F34[] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
 f32 D_800E9F54[] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
-u8 D_800E9F74[] = { 0, 0, 0, 0 };
-u8 D_800E9F78[] = { 0, 0, 0, 0 };
+u8 D_800E9F74[] = { 0, 0, 0, 0 , 0, 0, 0, 0 };
+u8 D_800E9F78[] = { 0, 0, 0, 0 , 0, 0, 0, 0 };
 struct Unk_800E9F7C D_800E9F7C[] = {
     { { 0.0f, 0.0f, 0.0f }, 1.0f, 1.0f, 0, 3800.0f, 3.4f, 0.4f, -1.0f, 0.4f, 1100.0f, 630.0f, 3600.0f, 1.0f },
     { { 0.0f, 0.0f, 0.0f }, 1.0f, 1.0f, 0, 3800.0f, 3.4f, 0.4f, -1.0f, 0.4f, 1100.0f, 630.0f, 3600.0f, 1.0f },
@@ -123,8 +129,8 @@ u32 external_unused_u32_1 = 0x00000000;
 u8 D_800EA1E4 = 0;
 u8 D_800EA1E8 = 0;
 u8 D_800EA1EC = 0;
-u8 D_800EA1F0[] = { 0, 1, 2, 3 };
-u8 D_800EA1F4[] = { 0, 0, 0, 0 };
+u8 D_800EA1F0[] = { 0, 1, 2, 3, 4, 5, 6, 7 };
+u8 D_800EA1F4[] = { 0, 0, 0, 0, 0, 0, 0, 0 };
 
 char external_unused_string00[] = "Error : Queue is not empty ( %x ) \n";
 char external_unused_string01[] = "specchg error\n";
@@ -361,6 +367,14 @@ void func_800C19D0(u8 arg0, u8 arg1, u8 arg2) {
             sp3B = func_800C15D0(arg0, arg1, arg2);
             sp34 = func_800C1934(arg0, arg1) * *temp_s0->unk10;
             sp33 = func_800C16E8(*temp_s0->unk00[0], *temp_s0->unk08, temp_s0->cameraId);
+            if (LocalMP_IsActive() && LocalMP_Count() > 4) {
+                if (temp_s0->unk00 == &D_800EA1C8) {
+                    sp33 = 64; // Shared HUD/menu sounds stay centered.
+                } else if (temp_s0->cameraId < LocalMP_Count()) {
+                    // Panning follows the actual view, including the wide-player swap.
+                    sp33 = (s8) (127 * gScreenContexts[temp_s0->cameraId].screenStartX / SCREEN_WIDTH);
+                }
+            }
             
             // Set surround effect index when in surround mode
             if (gAudioLibSoundMode == SOUND_MODE_SURROUND) {
@@ -475,7 +489,7 @@ void func_800C1F8C(void) {
     u8 cameraId;
     Camera** camera;
 
-    var_a1 = D_800EA1C0 + 1;
+    var_a1 = LocalMP_IsActive() ? LocalMP_Count() : D_800EA1C0 + 1;
     for (var_s1 = 0; var_s1 < var_a1; var_s1++) {
         gVelocityCamera[var_s1][0] = gCopyCamera[var_s1]->pos[0] - gCameraLastPos[var_s1][0];
         gVelocityCamera[var_s1][2] = gCopyCamera[var_s1]->pos[2] - gCameraLastPos[var_s1][2];
@@ -600,11 +614,9 @@ void func_800C2274(u8 player) {
 void func_800C2474(void) {
     u8 var_v0;
 
+    sExpandedItemSpinPlaying = false;
     D_8018EF10 = 0;
-    gCopyCamera[0] = camera1;
-    gCopyCamera[1] = camera2;
-    gCopyCamera[2] = camera3;
-    gCopyCamera[3] = camera4;
+    for (var_v0 = 0; var_v0 < NUM_PLAYERS; ++var_v0) gCopyCamera[var_v0] = &cameras[var_v0];
     D_8018FB91 = 0;
     D_8018FB90 = 1;
     D_800EA0F4 = 0;
@@ -622,7 +634,7 @@ void func_800C2474(void) {
     D_800EA17C = 0.85f;
     D_800EA180 = 0;
     D_800EA184 = 0;
-    for (var_v0 = 0; var_v0 < 4; var_v0++) {
+    for (var_v0 = 0; var_v0 < NUM_PLAYERS; var_v0++) {
         D_800E9DB4[var_v0] = 0;
         D_800E9DF4[var_v0] = 0; // This is an f32 FYI, but 0.0f doesn't match right :)
         gVelocityCamera[var_v0][0] = 0.0f;
@@ -647,6 +659,11 @@ void func_800C2474(void) {
         D_8018FC10[var_v0][0] = 0x00FF;
         D_8018FC10[var_v0][1] = 0;
         D_800EA10C[var_v0] = 0;
+        D_800EA170[var_v0] = 0;
+        D_800EA110[var_v0] = D_800EA120[var_v0] = 0.0f;
+        D_800E9E24[var_v0] = D_800E9E34[var_v0] = 0;
+        D_800E9E14[var_v0] = 0;
+        D_800E9DE4[var_v0] = D_800E9EC4[var_v0] = D_800E9ED4[var_v0] = 0.0f;
         D_800E9F74[var_v0] = 0;
         D_800E9F78[var_v0] = 0;
     }
@@ -1505,6 +1522,17 @@ void func_800C4888(u8 bankId) {
                 if (*temp_t2->unk08 > 0.0f) {
                     temp_t2->priority += (s32) (*temp_t2->unk08 * 6.0f);
                 }
+            }
+            if (bankId == 0 && LocalMP_IsActive() && LocalMP_Count() > 4) {
+                // Eight FF-priority engine loops occupy all eight bank-0
+                // channels. Native FE-priority roulette otherwise never wins
+                // a channel. HUD sounds take precedence while they are active;
+                // the existing channel count and sequence layout stay intact.
+                const bool itemFeedback = temp_t2->unk00 == &D_800EA1C8 &&
+                    (temp_t2->soundBits == SOUND_ARG_LOAD(0x01, 0x00, 0xFE, 0x1C) ||
+                     temp_t2->soundBits == SOUND_ARG_LOAD(0x01, 0x00, 0xFE, 0x47));
+                if (itemFeedback) temp_t2->priority = 0;
+                else if (temp_t2->priority == 0) temp_t2->priority = 1;
             }
             temp_t8 = ((u32) (temp_t2->soundBits & 0x30000) >> 0x10) & 0xFF;
             if (temp_t8 != 0) {
@@ -2453,6 +2481,40 @@ void func_800C70A8(u8 playerId) {
 }
 
 void func_800C76C0(u8 playerId) {
+    if (LocalMP_IsActive()) {
+        // Expanded races keep playing until every human finishes. Native finish
+        // handling changes the shared music and tests only the first four slots.
+        // Keep the per-player finish cues and character voices independent.
+        if (D_800E9EA4[playerId] == 0 || D_800EA16C != 0) return;
+        if (D_800E9EA4[playerId] < 0x2BC) ++D_800E9EA4[playerId];
+        if (D_800E9EA4[playerId] == 2) {
+            func_800C9018(playerId, SOUND_ARG_LOAD(0x01, 0x00, 0xFA, 0x28));
+            func_800C9018(playerId, SOUND_ARG_LOAD(0x01, 0x00, 0xFF, 0x2C));
+            func_800C9018(playerId, SOUND_ARG_LOAD(0x01, 0x00, 0xFA, 0x4C));
+            func_800C5578(&D_800E9F7C[playerId].pos, D_800E9E94[playerId]);
+            func_800C97C4(playerId);
+            D_800E9E74[playerId] = 0;
+            if (gModeSelection != BATTLE) {
+                D_800EA0EC[playerId] = 2;
+                func_800C9060(playerId, SOUND_ARG_LOAD(0x19, 0x00, 0xF1, 0x03));
+            }
+        }
+        // Offset simultaneous finishes so the two voice channels can serve later
+        // controller slots too. Sound requests still use each player's own emitter.
+        if (D_800E9EA4[playerId] == 30 + playerId * 12) {
+            u32 voice;
+            if (gModeSelection == BATTLE) {
+                voice = gPlayerBalloonCount[playerId] >= 0 ? 0x0D : 0x03;
+            } else {
+                voice = gPlayers[playerId].currentRank == 0 ? 0x07 :
+                        gPlayers[playerId].currentRank < 4 ? 0x0D : 0x03;
+            }
+            D_800EA0EC[playerId] = 2;
+            func_800C90F4(playerId, gPlayers[playerId].characterId * 0x10 +
+                         SOUND_ARG_LOAD(0x29, 0x00, 0x80, voice));
+        }
+        return;
+    }
     if (D_800E9EA4[playerId] != 0) {
         if (D_800E9EA4[playerId] < 0x2BC) {
             D_800E9EA4[playerId]++;
@@ -2888,10 +2950,42 @@ void func_800C8C7C(u8 arg0) {
     D_800EA06C[arg0].unk00[2] = (1.0f - D_800E9F54[arg0]) - D_800EA130[arg0];
 }
 
+static void update_expanded_item_spin(void) {
+    bool spinning = false;
+    if (LocalMP_IsActive() && LocalMP_Count() > 4 &&
+        gGamestate == RACING && gRaceState != RACE_FINISHED) {
+        for (s32 player = 0; player < LocalMP_Count(); ++player) {
+            const s32 objectIndex = gItemWindowObjectByPlayerId[player];
+            if (objectIndex < 0 || objectIndex >= OBJECT_LIST_SIZE || LocalMP_IsFinished(player)) continue;
+            // State 2 slides in; states 3–5 cycle; state 6 selects the item.
+            const s16 state = gObjectList[objectIndex].state;
+            if (state >= 2 && state <= 5) spinning = true;
+        }
+    }
+    if (spinning && !sExpandedItemSpinPlaying && D_800EA108 == 0) {
+        // HUD feedback uses the centered UI emitter, separate from engine
+        // emitters and the legacy four-player audio state. One shared loop
+        // lets overlapping spins finish independently without cutting sound.
+        play_sound2(SOUND_ARG_LOAD(0x01, 0x00, 0xFE, 0x1C));
+        sExpandedItemSpinPlaying = true;
+    } else if (!spinning && sExpandedItemSpinPlaying) {
+        func_800C5578(&D_800EA1C8, SOUND_ARG_LOAD(0x01, 0x00, 0xFE, 0x1C));
+        sExpandedItemSpinPlaying = false;
+    }
+}
+
 void func_800C8CCC() {
     u8 var_s0;
+    const u8 humans = LocalMP_IsActive() ? LocalMP_Count() : D_800EA1C0 + 1;
 
-    for (var_s0 = 0; var_s0 < D_800EA1C0 + 1; var_s0++) {
+    update_expanded_item_spin();
+    // The engine's channel-budget index stays in its native 0-3 range. The
+    // per-player state/notification dispatch must cover all human controller slots.
+    for (var_s0 = 0; var_s0 < humans; var_s0++) {
+        if (LocalMP_IsActive() && LocalMP_IsFinished(var_s0)) {
+            func_800C76C0(var_s0);
+            continue;
+        }
         func_800C5D04(var_s0);
         func_800C5E38(var_s0);
         func_800C6108(var_s0);
@@ -2909,7 +3003,7 @@ void func_800C8CCC() {
             func_800C8C7C(var_s0);
         }
     } else {
-        for (var_s0 = 0; var_s0 < D_800EA1C0 + 1; var_s0++) {
+        for (var_s0 = 0; var_s0 < humans; var_s0++) {
             func_800C8770(var_s0);
             func_800C8C7C(var_s0);
         }
@@ -2952,6 +3046,13 @@ void func_800C8F44(u8 arg0) {
 }
 
 void func_800C8F80(u8 arg0, u32 soundBits) {
+    if (LocalMP_IsActive() && LocalMP_Count() > 4) {
+        if (soundBits == SOUND_ARG_LOAD(0x01, 0x00, 0xFE, 0x1C)) return;
+        if (soundBits == SOUND_ARG_LOAD(0x01, 0x00, 0xFE, 0x47)) {
+            if (D_800EA108 == 0) play_sound2(soundBits);
+            return;
+        }
+    }
     if (D_800EA108 == 0) {
         switch (D_800EA0EC[arg0]) {
             case 2:
@@ -2964,6 +3065,9 @@ void func_800C8F80(u8 arg0, u32 soundBits) {
 }
 
 void func_800C9018(u8 arg0, u32 soundBits) {
+    // The shared loop stops after the last active roulette finishes.
+    if (LocalMP_IsActive() && LocalMP_Count() > 4 &&
+        soundBits == SOUND_ARG_LOAD(0x01, 0x00, 0xFE, 0x1C)) return;
     func_800C5578(&D_800E9F7C[arg0].pos, soundBits);
 }
 
@@ -3013,6 +3117,16 @@ void func_800C9250(u8 arg0) {
 void func_800C92CC(u8 playerId, u32 soundBits) {
     u8 var_s0;
     struct Unk_8018EFD8* temp_v0;
+
+    if (LocalMP_IsActive()) {
+        // Native nearby-racer voices are disabled for 3+ listeners. Expanded
+        // human feedback can use its own slot emitter without multiplying the
+        // spatial request list by eight cameras.
+        if (playerId < LocalMP_Count() && !LocalMP_IsFinished(playerId)) {
+            func_800C90F4(playerId, gPlayers[playerId].characterId * 0x10 + soundBits);
+        }
+        return;
+    }
 
     if ((D_800EA108 == 0) && (D_800EA0F0 == 0) && ((s32) D_800EA1C0 < 2)) {
         for (var_s0 = 0; var_s0 < D_800EA1C0 + 1; var_s0++) {
@@ -3303,6 +3417,9 @@ void func_800CA0E4(void) {
 void func_800CA118(u8 arg0) {
     D_800EA0EC[arg0] = 1;
     D_800E9EA4[arg0] = 1;
+    // Combined owns the end-of-race music transition after every human is done.
+    // An elimination or P1-P4 finish must not mute the rest of an expanded race.
+    if (LocalMP_IsActive()) return;
 
     // Audio: Stop the music when the race is over
     if(HMAS_IsPlaying(HMAS_MUSIC)){
@@ -3687,3 +3804,4 @@ void func_800CB2C4() {
     func_800C2274(0);
     func_800CBC24();
 }
+

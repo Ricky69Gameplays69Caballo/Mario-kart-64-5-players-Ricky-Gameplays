@@ -41,7 +41,7 @@ math(EXPR PATCH_INDEX "${PROJECT_VERSION_PATCH} % ${NATO_WORD_COUNT}")
 list(GET NATO_PHONETIC_ALPHABET ${PATCH_INDEX} PROJECT_PATCH_WORD)
 
 set(PROJECT_BUILD_NAME
-    "Bolognese ${PROJECT_PATCH_WORD}"
+    "Bolognese ${PROJECT_PATCH_WORD} - Multiplayer Options"
     CACHE STRING "" FORCE)
 set(PROJECT_TEAM "SpaghettiKart Team - HarbourMasters")
 

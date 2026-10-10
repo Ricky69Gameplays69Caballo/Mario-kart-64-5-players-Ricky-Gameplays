@@ -74,6 +74,10 @@ s8 D_8018D9D8;
 s8 D_8018D9D9;
 MenuItem gMenuItems[MENU_ITEMS_MAX];
 struct_8018DEE0_entry D_8018DEE0[D_8018DEE0_SIZE];
+static MenuItem sExpandedCharacterPortraits[8];
+static bool sExpandedCharacterPortraitsLoaded = false;
+static MenuItem sExpandedBattlePortraits[8];
+static bool sExpandedBattlePortraitsLoaded = false;
 struct_8018E060_entry D_8018E060[D_8018E060_SIZE + 1];
 struct_8018E0E8_entry D_8018E0E8[D_8018E0E8_SIZE];
 s32 sMenuTextureListIndex;
@@ -354,7 +358,7 @@ char* D_800E76A8[] = {
     "WARIO",
     "PEACH",
     "BOWSER",
-    "\xA1\xBC\xA1\xBC\xA1\xBC\xA1\xBC", // These are EUC-JP characters. Looks sort of like - or ー
+    "\xA1\xBC\xA1\xBC\xA1\xBC\xA1\xBC", // These are EUC-JP characters. Looks sort of like - or ãƒ¼
 };
 
 char* D_800E76CC[] = {
@@ -1060,7 +1064,7 @@ MenuTexture* gGlyphTextureLUT[] = {
 
 MenuTexture* D_800E8234[] = {
     seg2_menu_1p_column, D_020047DC, seg2_menu_2p_column, D_02004804,
-    seg2_menu_3p_column, D_0200482C, seg2_menu_4p_column, D_02004854,
+    seg2_menu_3p_column, D_02004804, seg2_menu_4p_column, D_02004804,
 };
 
 MenuTexture* D_800E8254[] = {
@@ -1219,6 +1223,11 @@ Unk_D_800E70A0 D_800E85C0[] = {
     { 0x69, 0x8c, 0x00, 0x00 }, { 0x78, 0x64, 0x00, 0x00 }, { 0x78, 0x64, 0x00, 0x00 }, { 0x78, 0x64, 0x00, 0x00 },
 
     { 0x69, 0x55, 0x00, 0x00 }, { 0x69, 0xcd, 0x00, 0x00 }, { 0x78, 0x28, 0x00, 0x00 }, { 0x78, 0xa0, 0x00, 0x00 },
+
+    // GP menus and their cursor share a layout for every screen mode/player.
+    { 0x28, 0x8c, 0x00, 0x00 }, { 0xc8, 0x8c, 0x00, 0x00 }, { 0x28, 0x8c, 0x00, 0x00 }, { 0xc8, 0x8c, 0x00, 0x00 },
+
+    { 0x28, 0x50, 0x00, 0x00 }, { 0xc8, 0x50, 0x00, 0x00 }, { 0x28, 0xc8, 0x00, 0x00 }, { 0xc8, 0xc8, 0x00, 0x00 },
 };
 
 // In a perfect world this would be `Unk_D_800E70A0 D_800E8600[][4]`
@@ -2597,17 +2606,56 @@ void func_80094A64(UNUSED struct GfxPool* pool) {
         case CHARACTER_SELECT_MENU:
         case COURSE_SELECT_MENU:
             handle_menus_default();
-            func_80099AEC();
+            if (!LocalMP_GameMenuIsOpen()) func_80099AEC();
             break;
     }
 
+    LocalMP_DrawGameMenuHint();
     func_8009CA2C();
     gCycleFlashMenu += 1;
     gDPPipeSync(gDisplayListHead++);
     gSPDisplayList(gDisplayListHead++, D_020076B0);
 }
 
+void MultiplayerOptions_UpdateMenus(void) {
+    const bool grandPrix = MultiplayerOptions_BotsEnabled() || MultiplayerOptions_EightEnabled();
+    static MenuTexture threePlayerGrandPrixColumn[5];
+    static MenuTexture fourPlayerGrandPrixColumn[5];
+    static s32 previous = -1;
+    // Native 3P/4P columns contain only VS/Battle artwork. Reuse the 2P
+    // GP/VS/Battle rows and their offsets while retaining each player card.
+    for (s32 entry = 0; entry < 5; ++entry) {
+        threePlayerGrandPrixColumn[entry] = seg2_menu_2p_column[entry];
+        fourPlayerGrandPrixColumn[entry] = seg2_menu_2p_column[entry];
+    }
+    threePlayerGrandPrixColumn[0] = seg2_menu_3p_column[0];
+    fourPlayerGrandPrixColumn[0] = seg2_menu_4p_column[0];
+    D_800E8234[4] = grandPrix ? threePlayerGrandPrixColumn : seg2_menu_3p_column;
+    D_800E8234[6] = grandPrix ? fourPlayerGrandPrixColumn : seg2_menu_4p_column;
+    D_800E8254[3] = D_800E8234[4];
+    D_800E8254[4] = D_800E8234[6];
+    for (s32 row = 2; row < 4; row++) {
+        gPlayerModeSelection[row] = grandPrix ? 2 : 1;
+        sGameModePlayerColumnDefault[row][1] = grandPrix ? 2 : 0;
+        sGameModePlayerColumnExtra[row][1] = grandPrix ? 3 : 0;
+        gGameModePlayerSelection[row][0] = grandPrix ? GRAND_PRIX : VERSUS;
+        gGameModePlayerSelection[row][1] = grandPrix ? VERSUS : BATTLE;
+        gGameModePlayerSelection[row][2] = grandPrix ? BATTLE : 0;
+        if (previous != grandPrix) {
+            // The first row changes from GP to VS: reset its cursor/submenu.
+            gGameModeMenuColumn[row] = 0;
+            gGameModeSubMenuColumn[row][0] = 0;
+            gGameModeSubMenuColumn[row][1] = 0;
+            gGameModeSubMenuColumn[row][2] = 0;
+        }
+    }
+    D_800E8234[5] = grandPrix ? D_02004804 : D_0200482C;
+    D_800E8234[7] = grandPrix ? D_02004804 : D_02004854;
+    previous = grandPrix;
+}
+
 void setup_menus(void) {
+    MultiplayerOptions_UpdateMenus();
     if (gFadeModeSelection != 0) {
         clear_menu_textures();
         func_8009A344();
@@ -3690,6 +3738,8 @@ void replace_texture(s32 index, const char* newTexture) {
 }
 
 void clear_menu_textures(void) {
+    sExpandedCharacterPortraitsLoaded = false;
+    sExpandedBattlePortraitsLoaded = false;
     for (size_t i = 0; i < ARRAY_COUNT(sMenuTextureList); i++) {
         sMenuTextureList[i] = NULL;
     }
@@ -4080,6 +4130,8 @@ void func_8009A2F0(struct_8018E0E8_entry* arg0) {
 
 void func_8009A344(void) {
     s32 index;
+    sExpandedCharacterPortraitsLoaded = false;
+    sExpandedBattlePortraitsLoaded = false;
     for (index = 0; index < D_8018DEE0_SIZE; index++) {
         D_8018DEE0[index].visible = 0;
     }
@@ -4514,7 +4566,410 @@ Gfx* func_8009B9D0(Gfx* displayListHead, MenuTexture* textures) {
     return displayListHead;
 }
 
-Gfx* render_menu_textures(Gfx* arg0, MenuTexture* arg1, s32 column, s32 row) {
+void draw_expanded_menu_background(void) {
+    const RGBA16* tint = &gBackgroundColor[0];
+    gDPSetGrayscaleColor(gDisplayListHead++, tint->red, tint->green, tint->blue, tint->alpha);
+    gSPGrayscale(gDisplayListHead++, true);
+    gDisplayListHead = func_8009BC9C(gDisplayListHead, gMenuTexturesBackground[has_unlocked_extra_mode()], 0, 0, 3, 0);
+    gSPGrayscale(gDisplayListHead++, false);
+}
+
+void draw_expanded_menu_title(void) {
+    gDisplayListHead = render_menu_textures_alt(gDisplayListHead, seg2_game_select_texture, 60, 17);
+}
+
+static void update_expanded_character_portrait(MenuItem* item, s32 grid, bool selected) {
+    const s32 animation = item->D_8018DEE0_index;
+    const s32 frame = D_8018DEE0[animation].sequenceIndex;
+    if (selected != item->param2) {
+        item->param2 = selected;
+        item->subState = selected ? 1 : 3;
+        func_8009A594(animation, 0, selected ? gCharacterCelebrateAnimation[grid] : gCharacterDeselectAnimation[grid]);
+    } else if (item->subState == 1 && frame >= D_800E8440[grid]) {
+        item->subState = 2;
+        func_8009A594(animation, 0, D_800E83A0[grid]);
+    } else if ((item->subState == 3 && frame >= D_800E8460[grid]) ||
+               (item->subState == 4 && frame >= D_800E8480[grid]) ||
+               (item->subState == 5 && frame >= D_800E84A0[grid])) {
+        item->subState = 0;
+        func_8009A594(animation, 0, D_800E8320[grid]);
+    } else if (item->subState == 0) {
+        const s32 blink = random_int(200);
+        if (blink >= 197) {
+            item->subState = blink >= 198 ? 4 : 5;
+            func_8009A594(animation, 0, blink >= 198 ? gCharacterSingleBlinkAnimation[grid] : gCharacterDoubleBlinkAnimation[grid]);
+        }
+    }
+}
+
+static void draw_expanded_portrait_mist(s32 x, s32 y, const u8* color, f32 scale) {
+    // The first layer of every native player border is the same IA mist.
+    // Reuse its original alpha gradient, tinting it with the extra player's
+    // frame color, without copying the native player-number layer.
+    MenuTexture* mist = &gMenuTexturesBorderPlayer[0][0];
+    gDPSetPrimColor(gDisplayListHead++, 0, 0, color[0], color[1], color[2], 255);
+    gDPSetEnvColor(gDisplayListHead++, 255, 255, 255, 0);
+    gSPDisplayList(gDisplayListHead++, D_02007768);
+    gDisplayListHead = func_800963F0(gDisplayListHead, 3, 1024, 1024, scale, scale,
+                                   0, 0, mist->width, mist->height,
+                                   x + (s32)(mist->dX * scale), y + (s32)(mist->dY * scale),
+                                   (u8*)mist->textureData, mist->width, mist->height);
+}
+
+static void draw_expanded_player_cursor(MenuItem* item, s32 player, bool confirmed) {
+    const s32 phase = gGlobalTimer % 16;
+    const s32 shade = confirmed ? 191 + (phase < 8 ? phase : 16 - phase) * 8 : 255;
+    if (player < 4) {
+        render_cursor_player(item, player, shade);
+        return;
+    }
+    // Additional markers use the same square frame, diagonal corner, and
+    // white pixel digits as the original four cursors, with distinct colors.
+    static const u8 colors[4][3] = {{255, 0, 192}, {0, 208, 255}, {160, 80, 255}, {224, 224, 224}};
+    static const u8 digits[4][7] = {
+        {31, 16, 30, 1, 1, 17, 14}, {14, 16, 16, 30, 17, 17, 14},
+        {31, 1, 2, 4, 8, 8, 8}, {14, 17, 17, 14, 17, 17, 14}
+    };
+    const u8* color = colors[player - 4];
+    const s32 x = item->column, y = item->row;
+    draw_expanded_portrait_mist(x, y, color, 1.0f);
+    gDisplayListHead = draw_box_fill(gDisplayListHead, x, y, x + 63, y + 1, color[0], color[1], color[2], 255);
+    gDisplayListHead = draw_box_fill(gDisplayListHead, x, y + 62, x + 63, y + 63, color[0], color[1], color[2], 255);
+    gDisplayListHead = draw_box_fill(gDisplayListHead, x, y, x + 1, y + 63, color[0], color[1], color[2], 255);
+    gDisplayListHead = draw_box_fill(gDisplayListHead, x + 62, y, x + 63, y + 63, color[0], color[1], color[2], 255);
+    for (s32 line = 0; line < 28; ++line) {
+        gDisplayListHead = draw_box_fill(gDisplayListHead, x, y + 36 + line, x + line, y + 36 + line,
+                                        color[0], color[1], color[2], 255);
+    }
+    for (s32 pass = 0; pass < 2; ++pass) {
+        for (s32 row = 0; row < 7; ++row) {
+            for (s32 column = 0; column < 5; ++column) {
+                if (digits[player - 4][row] & (16 >> column)) {
+                    const s32 px = x + 4 + column * 2 + (pass == 0 ? 1 : 0);
+                    const s32 py = y + 46 + row * 2 + (pass == 0 ? 1 : 0);
+                    const s32 value = pass == 0 ? 0 : shade;
+                    gDisplayListHead = draw_box_fill(gDisplayListHead, px, py, px + 1, py + 1, value, value, value, 255);
+                }
+            }
+        }
+    }
+}
+
+static void draw_shared_character_player_tag(s32 x, s32 y, s32 player, bool confirmed) {
+    static const u8 extraColors[4][3] = {{255, 0, 192}, {0, 208, 255}, {160, 80, 255}, {224, 224, 224}};
+    static const u8 digits[8][7] = {
+        {4, 12, 4, 4, 4, 4, 14}, {14, 17, 1, 2, 4, 8, 31},
+        {30, 1, 1, 14, 1, 1, 30}, {2, 6, 10, 18, 31, 2, 2},
+        {31, 16, 30, 1, 1, 17, 14}, {14, 16, 16, 30, 17, 17, 14},
+        {31, 1, 2, 4, 8, 8, 8}, {14, 17, 17, 14, 17, 17, 14}
+    };
+    const s32 red = player < 4 ? D_800E74A8[player].red : extraColors[player - 4][0];
+    const s32 green = player < 4 ? D_800E74A8[player].green : extraColors[player - 4][1];
+    const s32 blue = player < 4 ? D_800E74A8[player].blue : extraColors[player - 4][2];
+    gDisplayListHead = draw_box_fill(gDisplayListHead, x, y, x + 13, y + 9, red, green, blue, 255);
+    gDisplayListHead = draw_box_fill(gDisplayListHead, x + 1, y + 1, x + 12, y + 8, 0, 0, 0, 255);
+    // Readiness belongs to each player, even on a shared portrait.
+    if (confirmed) gDisplayListHead = draw_box_fill(gDisplayListHead, x + 10, y + 3, x + 11, y + 6, 255, 255, 255, 255);
+    for (s32 row = 0; row < 7; ++row) {
+        for (s32 column = 0; column < 5; ++column) {
+            if (digits[player][row] & (16 >> column)) {
+                const s32 px = x + 3 + column, py = y + 1 + row;
+                gDisplayListHead = draw_box_fill(gDisplayListHead, px, py, px, py, 255, 255, 255, 255);
+            }
+        }
+    }
+}
+
+void draw_expanded_character_select(const s32* characters, const u8* ready, s32 count, s32 allReady) {
+    if (!sExpandedCharacterPortraitsLoaded) {
+        s32 freeSlots = 0;
+        for (s32 i = 0; i < D_8018DEE0_SIZE; ++i) freeSlots += D_8018DEE0[i].visible == 0;
+        // Guard the native allocator, which otherwise spins forever when full.
+        if (freeSlots < 8) return;
+        load_menu_img_comp_type(D_02004B4C, LOAD_MENU_IMG_TKMK00_ONCE);
+        load_menu_img_comp_type(D_02004B74, LOAD_MENU_IMG_TKMK00_ONCE);
+        for (s32 i = 0; i < 8; ++i) {
+            MenuItem* item = &sExpandedCharacterPortraits[i];
+            memset(item, 0, sizeof(*item));
+            item->column = D_800E7108[i / 4][i % 4].column;
+            item->row = D_800E7108[i / 4][i % 4].row;
+            item->D_8018DEE0_index = animate_character_select_menu(D_800E8320[i]);
+            load_menu_img_comp_type(D_800E7D54[i], LOAD_MENU_IMG_TKMK00_ONCE);
+            if (i < 4) load_menu_img(gMenuTexturesBorderPlayer[i]);
+        }
+        sExpandedCharacterPortraitsLoaded = true;
+    }
+    const RGBA16* tint = &gBackgroundColor[1];
+    gDPSetGrayscaleColor(gDisplayListHead++, tint->red, tint->green, tint->blue, tint->alpha);
+    gSPGrayscale(gDisplayListHead++, true);
+    gDisplayListHead = func_8009BC9C(gDisplayListHead, gMenuTexturesBackground[has_unlocked_extra_mode()], 0, 0, 3, 0);
+    gSPGrayscale(gDisplayListHead++, false);
+    gDisplayListHead = render_menu_textures(gDisplayListHead, D_02004B4C, 0, 0);
+    for (s32 grid = 0; grid < 8; ++grid) {
+        MenuItem* item = &sExpandedCharacterPortraits[grid];
+        s32 owners[8];
+        s32 ownerCount = 0;
+        bool anyConfirmed = false;
+        for (s32 player = 0; player < count; ++player) {
+            if (D_800EFD64[characters[player]] == grid) {
+                owners[ownerCount++] = player;
+                anyConfirmed |= ready[player] != 0;
+            }
+        }
+        update_expanded_character_portrait(item, grid, anyConfirmed);
+        gDisplayListHead = render_menu_textures(gDisplayListHead, D_800E7D54[grid], item->column, item->row);
+        func_8009A76C(item->D_8018DEE0_index, item->column, item->row, 0);
+        if (ownerCount > 0) draw_expanded_player_cursor(item, owners[0], ready[owners[0]]);
+        if (ownerCount > 1) {
+            // Show every player number instead of stacking opaque cursor corners.
+            for (s32 i = 0; i < ownerCount; ++i) {
+                draw_shared_character_player_tag(item->column + 3 + (i % 4) * 14,
+                                                  item->row + 42 + (i / 4) * 10,
+                                                  owners[i], ready[owners[i]]);
+            }
+        }
+    }
+    if (allReady) {
+        const s32 x = D_02004B74[0].dX, y = D_02004B74[0].dY;
+        gDisplayListHead = draw_flash_select_case_slow(gDisplayListHead, x, y, x + 30, y + 18);
+        gDisplayListHead = render_menu_textures(gDisplayListHead, D_02004B74, 0, 0);
+    }
+    // The expanded page bypasses the default menu's animation update pass.
+    func_80099AEC();
+}
+
+static void draw_battle_texture_scaled(MenuTexture* texture, s32 x, s32 y) {
+    const f32 scale = 0.75f;
+    for (; texture->textureData != NULL; ++texture) {
+        const s32 format = texture->type == 3 ? 3 : 0;
+        Gfx* setup = texture->type == 0 ? D_02007708 : texture->type == 2 ? D_02007748 :
+                     texture->type == 3 ? D_02007768 : texture->type == 4 ? D_02007788 : D_02007728;
+        gSPDisplayList(gDisplayListHead++, setup);
+        gDisplayListHead = func_800963F0(gDisplayListHead, format, 1024, 1024, scale, scale,
+                                       0, 0, texture->width, texture->height,
+                                       x + (s32)(texture->dX * scale), y + (s32)(texture->dY * scale),
+                                       (u8*)texture->textureData, texture->width, texture->height);
+    }
+}
+
+void draw_expanded_battle_results(const s32* characters, const s32* wins, s32 count,
+                                  s32 winner, s32 choice, MenuItem* cursor) {
+    static const u8 extraColors[4][3] = {{255, 0, 192}, {0, 208, 255}, {160, 80, 255}, {224, 224, 224}};
+    static const u8 extraDigits[4][7] = {
+        {31, 16, 30, 1, 1, 17, 14}, {14, 16, 16, 30, 17, 17, 14},
+        {31, 1, 2, 4, 8, 8, 8}, {14, 17, 17, 14, 17, 17, 14}
+    };
+    if (!sExpandedBattlePortraitsLoaded) {
+        s32 freeSlots = 0;
+        for (s32 i = 0; i < D_8018DEE0_SIZE; ++i) freeSlots += D_8018DEE0[i].visible == 0;
+        if (freeSlots < count) return; // The native allocator otherwise loops forever.
+        for (s32 player = 0; player < count; ++player) {
+            const s32 grid = D_800EFD64[characters[player]];
+            MenuItem* portrait = &sExpandedBattlePortraits[player];
+            memset(portrait, 0, sizeof(*portrait));
+            portrait->D_8018DEE0_index = animate_character_select_menu(player == winner ?
+                gCharacterCelebrateAnimation[grid] : gCharacterDefeatAnimation[grid]);
+            load_menu_img_comp_type(D_800E7D54[grid], LOAD_MENU_IMG_TKMK00_ONCE);
+            if (player < 4) load_menu_img(gMenuTexturesBorderPlayer[player]);
+        }
+        sExpandedBattlePortraitsLoaded = true;
+    }
+    gDisplayListHead = draw_box_wide(gDisplayListHead, 0, 0, 319, 239, 0, 0, 0, 100);
+    set_text_color(TEXT_BLUE_GREEN_RED_CYCLE_2);
+    print_text1_center_mode_1(160, 22, D_800E7778[1], 0, 0.85f, 0.85f);
+    for (s32 player = 0; player < count; ++player) {
+        const s32 grid = D_800EFD64[characters[player]];
+        const s32 rowCount = player < 4 ? 4 : count - 4;
+        const s32 x = (320 - (rowCount - 1) * 70 - 48) / 2 + (player % 4) * 70;
+        const s32 y = player < 4 ? 31 : 107;
+        MenuItem* portrait = &sExpandedBattlePortraits[player];
+        struct_8018DEE0_entry* animation = &D_8018DEE0[portrait->D_8018DEE0_index];
+        if (player == winner && portrait->subState == 0 && animation->sequenceIndex >= D_800E8440[grid]) {
+            portrait->subState = 1;
+            func_8009A594(portrait->D_8018DEE0_index, 0, D_800E83A0[grid]);
+        }
+        // Name bars and victory/defeat portraits are the original battle assets.
+        draw_battle_texture_scaled(D_800E7D54[grid], x, y);
+        draw_battle_texture_scaled(func_8009A878(animation), x, y);
+        if (player < 4) {
+            RGBA16* color = &D_800E74A8[player];
+            gDPSetPrimColor(gDisplayListHead++, 0, 0, color->red, color->green, color->blue, color->alpha);
+            gDPSetEnvColor(gDisplayListHead++, 255, 255, 255, 0);
+            draw_battle_texture_scaled(gMenuTexturesBorderPlayer[player], x, y);
+        } else {
+            const u8* color = extraColors[player - 4];
+            draw_expanded_portrait_mist(x, y, color, 0.75f);
+            gDisplayListHead = draw_box_fill(gDisplayListHead, x, y, x + 47, y + 1, color[0], color[1], color[2], 255);
+            gDisplayListHead = draw_box_fill(gDisplayListHead, x, y + 46, x + 47, y + 47, color[0], color[1], color[2], 255);
+            gDisplayListHead = draw_box_fill(gDisplayListHead, x, y, x + 1, y + 47, color[0], color[1], color[2], 255);
+            gDisplayListHead = draw_box_fill(gDisplayListHead, x + 46, y, x + 47, y + 47, color[0], color[1], color[2], 255);
+            for (s32 line = 0; line < 21; ++line)
+                gDisplayListHead = draw_box_fill(gDisplayListHead, x, y + 27 + line, x + line, y + 27 + line,
+                                                color[0], color[1], color[2], 255);
+            for (s32 line = 0; line < 7; ++line) {
+                for (s32 column = 0; column < 5; ++column) {
+                    if (extraDigits[player - 4][line] & (16 >> column)) {
+                        const s32 px = x + 3 + column * 2, py = y + 32 + line * 2;
+                        gDisplayListHead = draw_box_fill(gDisplayListHead, px + 1, py + 1, px + 2, py + 2, 0, 0, 0, 255);
+                        gDisplayListHead = draw_box_fill(gDisplayListHead, px, py, px + 1, py + 1, 255, 255, 255, 255);
+                    }
+                }
+            }
+        }
+        char score[16];
+        snprintf(score, sizeof(score), "%02d", wins[player]);
+        char nativeScore[32];
+        const s32 digits = strlen(score);
+        // Full-width native digits are the large blue gradient win counters.
+        for (s32 digit = 0; digit < digits; ++digit) {
+            nativeScore[digit * 2] = 0xA3;
+            nativeScore[digit * 2 + 1] = 0xB0 + score[digit] - '0';
+        }
+        nativeScore[digits * 2] = 0;
+        const f32 scoreScale = wins[player] < 100 ? 0.55f : 0.4f;
+        set_text_color(player == winner ? gGlobalTimer % 3 : TEXT_BLUE);
+        print_text1_center_mode_2(x + 24, y + 75, nativeScore, 0, scoreScale, scoreScale);
+    }
+    for (s32 option = 0; option < 4; ++option) {
+        text_rainbow_effect(choice, option, TEXT_GREEN);
+        print_text_mode_1(108, 196 + option * 13, gTextPauseButton[option + 1], 0, 0.65f, 0.65f);
+    }
+    Unk_D_800E70A0 position = {96, 188 + choice * 13, 0, 0};
+    pause_menu_item_box_cursor(cursor, &position);
+    if (winner < 0) {
+        set_text_color(TEXT_YELLOW);
+        print_text_mode_1(24, 229, "DRAW", 0, 0.5f, 0.5f);
+    }
+    func_80099AEC();
+}
+
+void draw_expanded_course_select(s32 cup, s32 previewTrack, s32 mode, s32 stage, s32 engineClass) {
+    // Use the native descriptor offsets, artwork, and virtual 320x240 layout.
+    if (cup < 0 || cup >= NUM_CUPS || previewTrack < 0 || previewTrack >= 4) return;
+    const RGBA16* tint = &gBackgroundColor[2];
+    gDPSetGrayscaleColor(gDisplayListHead++, tint->red, tint->green, tint->blue, tint->alpha);
+    gSPGrayscale(gDisplayListHead++, true);
+    gDisplayListHead = func_8009BC9C(gDisplayListHead, gMenuTexturesBackground[has_unlocked_extra_mode()], 0, 0, 3, 0);
+    gSPGrayscale(gDisplayListHead++, false);
+    load_menu_img_comp_type(gMenuTexturesTrackSelection[0], LOAD_MENU_IMG_TKMK00_ONCE);
+    gDisplayListHead = render_menu_textures(gDisplayListHead, gMenuTexturesTrackSelection[0], 0, 0);
+
+    const bool confirming = stage == (mode == 1 ? 2 : 1);
+    if (mode != 2) {
+        for (s32 i = 0; i < 4; ++i) {
+            if (stage > 0 && i != cup) continue;
+            const s32 x = stage == 0 ? D_800E7148[i].column : 128;
+            const s32 y = D_800E7148[i].row;
+            if (i == cup && stage == 0) {
+                gDisplayListHead = draw_flash_select_case_slow(gDisplayListHead, x, y, x + 64, y + 39);
+            } else {
+                gDisplayListHead = draw_box_fill(gDisplayListHead, x, y, x + 64, y + 39,
+                                                i == cup ? 255 : 1, i == cup ? 249 : 1, i == cup ? 220 : 1, 255);
+            }
+            load_menu_img_comp_type(gMenuTexturesTrackSelection[i + 1], LOAD_MENU_IMG_TKMK00_ONCE);
+            gDisplayListHead = render_menu_textures(gDisplayListHead, gMenuTexturesTrackSelection[i + 1], x, y);
+        }
+    } else {
+        render_battle_introduction(NULL);
+    }
+
+    for (s32 row = 0; row < 4; ++row) {
+        const s32 left = D_800E7208[row][0].column, top = D_800E7208[row][0].row;
+        const s32 right = D_800E7208[row][1].column, bottom = D_800E7208[row][1].row;
+        if (mode != 0 && row == previewTrack && (mode == 2 || stage > 0)) {
+            if (!confirming) gDisplayListHead = draw_flash_select_case_slow(gDisplayListHead, left, top, right, bottom);
+            else gDisplayListHead = draw_box_fill(gDisplayListHead, left, top, right, bottom, 255, 249, 220, 255);
+        } else gDisplayListHead = draw_box_fill(gDisplayListHead, left, top, right, bottom, 1, 1, 1, 255);
+    }
+    MenuTexture* names = gMenuTexturesTrackSelection[mode == 2 ? 10 : cup + 6];
+    load_menu_img_comp_type(names, LOAD_MENU_IMG_TKMK00_ONCE);
+    gDisplayListHead = render_menu_textures(gDisplayListHead, names, 0, 0);
+    if (mode == 0 && !confirming) {
+        for (s32 row = 0; row < 4; ++row) {
+            if (row != previewTrack) {
+                gDisplayListHead = draw_box(gDisplayListHead, D_800E7208[row][0].column, D_800E7208[row][0].row,
+                                            D_800E7208[row][1].column, D_800E7208[row][1].row, 0, 0, 0, 100);
+            }
+        }
+    }
+
+    gDisplayListHead = draw_box_fill(gDisplayListHead, 22, 111, 151, 190, 0, 0, 0, 255);
+    if (mode == 1 && stage == 0) {
+        // VS shows all four previews until a cup is selected, as in the native menu.
+        for (s32 i = 0; i < 4; ++i) {
+            MenuTexture* image = D_800E7E34[gCupCourseOrder[cup][i]][0].mk64Texture;
+            load_menu_img_comp_type(image, LOAD_MENU_IMG_MIO0_ONCE);
+            gDisplayListHead = func_8009C204(gDisplayListHead, image, D_800E7168[i].column, D_800E7168[i].row, 2);
+        }
+    } else {
+        MenuTexture* image = D_800E7E34[gCupCourseOrder[cup][previewTrack]][0].mk64Texture;
+        load_menu_img_comp_type(image, LOAD_MENU_IMG_MIO0_ONCE);
+        gDisplayListHead = render_menu_textures(gDisplayListHead, image, 23, 112);
+    }
+    if (mode == 0 && engineClass >= CC_50 && engineClass <= CC_EXTRA) {
+        load_menu_img_comp_type(D_800E8294[engineClass], LOAD_MENU_IMG_TKMK00_ONCE);
+        gDisplayListHead = draw_box_fill(gDisplayListHead, 55, 195, 118, 212, 1, 1, 1, 255);
+        gDisplayListHead = render_menu_textures(gDisplayListHead, D_800E8294[engineClass], 55, 195);
+    }
+    if (confirming) {
+        load_menu_img_comp_type(D_02004E80, LOAD_MENU_IMG_TKMK00_ONCE);
+        const s32 x = D_02004E80[0].dX, y = D_02004E80[0].dY;
+        gDisplayListHead = draw_flash_select_case_slow(gDisplayListHead, x, y, x + 30, y + 18);
+        gDisplayListHead = render_menu_textures(gDisplayListHead, D_02004E80, 0, 0);
+    }
+}
+
+void draw_expanded_menu_card_base(s32 column, s32 row, s32 selected, s32 confirmed) {
+    if (selected && !confirmed) {
+        gDisplayListHead = draw_flash_select_case_slow(gDisplayListHead, column, row, column + 63, row + 53);
+    } else {
+        gDisplayListHead = draw_box_fill(gDisplayListHead, column, row, column + 63, row + 53,
+                                       selected ? 255 : 0, selected ? 203 : 0, selected ? 220 : 0, 255);
+    }
+    gDisplayListHead = render_menu_textures_alt(gDisplayListHead, D_02004804, column, row);
+}
+
+static Gfx* render_menu_textures_filtered(Gfx* arg0, MenuTexture* arg1, s32 column, s32 row, bool sharp);
+
+void draw_expanded_menu_button(s32 column, s32 row, s32 kind, s32 selected, s32 confirmed) {
+    MenuTexture artwork[2] = {0};
+    if (kind < 0 || kind > 7) return;
+    // Copy the exact native GP/VS and CC descriptors, including their icon and frame.
+    artwork[0] = kind == 7 ? D_0200487C[0] : kind == 6 ? seg2_menu_2p_column[3] :
+                 kind < 2 ? seg2_menu_2p_column[kind + 1] : D_800E8294[kind - 2][0];
+    artwork[0].dX = artwork[0].dY = 0;
+    const s32 right = column + artwork[0].width - 1;
+    const s32 bottom = row + artwork[0].height - 1;
+    if (selected && !confirmed) {
+        gDisplayListHead = draw_flash_select_case_slow(gDisplayListHead, column, row, right, bottom);
+    } else {
+        gDisplayListHead = draw_box_fill(gDisplayListHead, column, row, right, bottom,
+                                       selected ? 255 : 1, selected ? 249 : 1, selected ? 220 : 1, 255);
+    }
+    // Use the same cached renderer as native mode/class/OK menu items.
+    load_menu_img(artwork);
+    gDisplayListHead = render_menu_textures_filtered(gDisplayListHead, artwork, column, row, true);
+}
+
+void draw_expanded_player_card(s32 column, s32 row) {
+    static const ALIGN_ASSET(2) char artwork[] = "__OTR__textures/local_multiplayer/four_plus_players";
+    gSPDisplayList(gDisplayListHead++, D_02007728);
+    // This user PNG is stored as RGBA32. The generic menu helper loads 16-bit
+    // tiles, which halves the row stride and interprets pairs of color bytes
+    // as RGBA5551 pixels. Load the actual format and all 64x54 pixels directly.
+    gDPPipeSync(gDisplayListHead++);
+    // Keep the supplied pixel art sharp at any window size.
+    gDPSetTextureFilter(gDisplayListHead++, G_TF_POINT);
+    gDPSetPrimColor(gDisplayListHead++, 0, 0, 255, 255, 255, 255);
+    gDPLoadTextureTile(gDisplayListHead++, (u8*) artwork, G_IM_FMT_RGBA, G_IM_SIZ_32b,
+                       64, 54, 0, 0, 63, 53, 0, G_TX_CLAMP, G_TX_CLAMP, 0, 0, G_TX_NOLOD, G_TX_NOLOD);
+    gSPWideTextureRectangle(gDisplayListHead++, column << 2, row << 2,
+                            (column + 64) << 2, (row + 54) << 2, G_TX_RENDERTILE, 0, 0, 1024, 1024);
+    gDPPipeSync(gDisplayListHead++);
+    gDPSetTextureFilter(gDisplayListHead++, G_TF_BILERP);
+}
+
+static Gfx* render_menu_textures_filtered(Gfx* arg0, MenuTexture* arg1, s32 column, s32 row, bool sharp) {
     u8* temp_v0_3;
     s8 var_s4;
 
@@ -4541,6 +4996,12 @@ Gfx* render_menu_textures(Gfx* arg0, MenuTexture* arg1, s32 column, s32 row) {
                 gSPDisplayList(arg0++, D_02007728);
                 break;
         }
+        if (sharp) {
+            // Native setup display lists reset the sampler. Override after
+            // setup so both button lettering and its icon retain hard pixels.
+            gDPPipeSync(arg0++);
+            gDPSetTextureFilter(arg0++, G_TF_POINT);
+        }
         temp_v0_3 = (u8*) func_8009B8C4(arg1->textureData);
         if (temp_v0_3 != NULL) {
             if (gTransitionType[4] != 4) {
@@ -4553,7 +5014,15 @@ Gfx* render_menu_textures(Gfx* arg0, MenuTexture* arg1, s32 column, s32 row) {
         }
         arg1++;
     }
+    if (sharp) {
+        gDPPipeSync(arg0++);
+        gDPSetTextureFilter(arg0++, G_TF_BILERP);
+    }
     return arg0;
+}
+
+Gfx* render_menu_textures(Gfx* arg0, MenuTexture* arg1, s32 column, s32 row) {
+    return render_menu_textures_filtered(arg0, arg1, column, row, false);
 }
 
 Gfx* render_menu_textures_alt(Gfx* arg0, MenuTexture* arg1, s32 column, s32 row) {
@@ -8314,12 +8783,23 @@ void render_pause_grand_prix(MenuItem* arg0) {
     Unk_D_800E70A0* temp_s3;
     ScreenContext* temp_v0;
     f32 one = 1.0f;
+    f32 optionScale = 0.75f;
+    s32 titleCenterX = SCREEN_WIDTH / 2;
 
     temp_v0 = &gScreenContexts[gIsGamePaused - 1];
     temp_v1 = temp_v0->screenStartX;
     temp_t0 = temp_v0->screenStartY;
     temp_t3 = temp_v0->screenWidth / 2;
     temp_t4 = temp_v0->screenHeight / 2;
+
+    if (gScreenModeSelection == SCREEN_MODE_3P_4P_SPLITSCREEN ||
+        gScreenModeSelection == SCREEN_MODE_2P_SPLITSCREEN_VERTICAL) {
+        // The GP title used to span the whole window while its menu belongs
+        // to one narrow viewport. Keep both titles and options inside it.
+        titleCenterX = temp_v1;
+        one = 0.5f;
+        optionScale = 0.55f;
+    }
 
     switch (gScreenModeSelection) {
         case SCREEN_MODE_1P:
@@ -8334,6 +8814,14 @@ void render_pause_grand_prix(MenuItem* arg0) {
             gDisplayListHead = draw_box_wide(gDisplayListHead, leftEdge - rightEdge, temp_t0 - temp_t4,
                                              leftEdge + rightEdge, temp_t0 + temp_t4, 0, 0, 0, 140);
         } break;
+        case SCREEN_MODE_3P_4P_SPLITSCREEN: {
+            const s32 left = temp_v1 - temp_t3 == 0 ? OTRGetDimensionFromLeftEdge(0) : temp_v1 - temp_t3;
+            const s32 right = temp_v1 + temp_t3 == SCREEN_WIDTH ?
+                              OTRGetDimensionFromRightEdge(SCREEN_WIDTH) : temp_v1 + temp_t3;
+            gDisplayListHead = draw_box_wide_pause_background(gDisplayListHead, left, temp_t0 - temp_t4,
+                                                              right, temp_t0 + temp_t4, 0, 0, 0, 140);
+            break;
+        }
         default:
             gDisplayListHead = draw_box(gDisplayListHead, temp_v1 - temp_t3, temp_t0 - temp_t4, temp_v1 + temp_t3,
                                         temp_t0 + temp_t4, 0, 0, 0, 140);
@@ -8344,14 +8832,15 @@ void render_pause_grand_prix(MenuItem* arg0) {
     temp_s0 = ((get_string_width(gCupNames[GetCupIndex()]) * one) + 10.0f) / 2;
     temp_s1 = ((get_string_width(D_800E76CC[gCCSelection]) * one) + 10.0f) / 2;
     set_text_color(TEXT_YELLOW);
-    print_text1_center_mode_1(160 - temp_s1, temp_s3->row - 50, gCupNames[GetCupIndex()], 0, 1.0f, 1.0f);
+    print_text1_center_mode_1(titleCenterX - temp_s1, temp_s3->row - 50, gCupNames[GetCupIndex()], 0, one, one);
     set_text_color(TEXT_YELLOW);
-    print_text1_center_mode_1(160 + temp_s0, temp_s3->row - 50, D_800E76CC[gCCSelection], 0, 1.0f, 1.0f);
+    print_text1_center_mode_1(titleCenterX + temp_s0, temp_s3->row - 50, D_800E76CC[gCCSelection], 0, one, one);
     set_text_color(TEXT_YELLOW);
-    print_text1_center_mode_1(160, temp_s3->row - 30, CM_GetProps()->Name, 0, 1.0f, 1.0f);
+    print_text1_center_mode_1(titleCenterX, temp_s3->row - 30, CM_GetProps()->Name, 0, one, one);
     for (var_s0 = 0; var_s0 < 2; var_s0++) {
         text_rainbow_effect(arg0->state - 31, var_s0, TEXT_YELLOW);
-        print_text_mode_1(temp_s3->column, temp_s3->row + (var_s0 * 13), gTextPauseButton[var_s0 * 4], 0, 0.75f, 0.75f);
+        print_text_mode_1(temp_s3->column, temp_s3->row + (var_s0 * 13), gTextPauseButton[var_s0 * 4], 0,
+                          optionScale, optionScale);
     }
 }
 
@@ -8880,7 +9369,7 @@ void func_800A6E94(s32 arg0, s32 arg1, u8* arg2) {
     } else {
         set_text_color(TEXT_YELLOW);
     }
-    //                                       EUC-JP char 1 st       ー
+    //                                       EUC-JP char 1 st       ãƒ¼
     text_draw(temp_s0->column + 4, temp_s0->row + 0x5A, "1 \xA3\xF3 \xA1\xBC", 0, 0.8f, 0.8f);
     temp_v0 = arg2 + (arg1 * 3);
     convert_number_to_ascii(temp_v0[0], sp40);
@@ -8890,7 +9379,7 @@ void func_800A6E94(s32 arg0, s32 arg1, u8* arg2) {
     } else {
         set_text_color(TEXT_BLUE);
     }
-    //                                       EUC-JP char 2 nd       ー
+    //                                       EUC-JP char 2 nd       ãƒ¼
     text_draw(temp_s0->column + 4, temp_s0->row + 0x69, "2 \xA3\xEE \xA1\xBC", 0, 0.8f, 0.8f);
     convert_number_to_ascii(temp_v0[1], sp40);
     text_draw(temp_s0->column + 0x2D, temp_s0->row + 0x69, sp40, 0, 0.8f, 0.8f);
@@ -8899,7 +9388,7 @@ void func_800A6E94(s32 arg0, s32 arg1, u8* arg2) {
     } else {
         set_text_color(TEXT_RED);
     }
-    //                                       EUC-JP char 3 rd       ー
+    //                                       EUC-JP char 3 rd       ãƒ¼
     text_draw(temp_s0->column + 4, temp_s0->row + 0x78, "3 \xA3\xF2 \xA1\xBC", 0, 0.8f, 0.8f);
     convert_number_to_ascii(temp_v0[2], sp40);
     text_draw(temp_s0->column + 0x2D, temp_s0->row + 0x78, sp40, 0, 0.8f, 0.8f);
@@ -9094,6 +9583,11 @@ void handle_menus_with_pri_arg(s32 priSpecial) {
     s32 i;
     s32 type;
     MenuItem* menuItem;
+
+    if (priSpecial == 0 && LocalMP_GameMenuIsOpen()) {
+        LocalMP_DrawGameMenu();
+        return;
+    }
 
     for (i = 0; i < MENU_ITEMS_MAX; i++) {
         isRendered = false;

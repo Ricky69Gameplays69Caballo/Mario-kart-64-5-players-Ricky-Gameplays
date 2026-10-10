@@ -43,8 +43,8 @@ typedef struct Matrix {
     Mtx Ortho;
     std::array<Mtx,5> Persp;
     std::array<Mtx,5> LookAt;
-    std::array<Mtx, 8 * 4> Karts; // Eight players * four screens
-    std::array<Mtx, 8 * 4> Shadows; // Eight players * four screens
+    std::array<Mtx, 8 * 8> Karts; // Eight players * four screens
+    std::array<Mtx, 8 * 8> Shadows; // Eight players * four screens
     std::deque<Mtx> Hud;
     std::deque<Mtx> Objects;
 
@@ -128,7 +128,7 @@ public:
     std::unordered_map<s32, OLakitu*> Lakitus;
 
     /** Objects **/
-    PlayerBombKart mPlayerBombKart[4]; // Used in battle mode
+    PlayerBombKart mPlayerBombKart[8]; // One eliminated-player bomb per controller port.
 
     TrainCrossing* AddCrossing(Vec3f position, u32 waypointMin, u32 waypointMax, f32 approachRadius, f32 exitRadius);
     std::vector<std::shared_ptr<TrainCrossing>> Crossings;

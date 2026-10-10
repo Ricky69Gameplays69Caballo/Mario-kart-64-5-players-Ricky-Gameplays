@@ -23,6 +23,7 @@
 
 #include "engine/GameAPI.h"
 #include "port/Game.h"
+#include "port/LocalMultiplayer.h"
 
 f32 D_800DDB30[] = { 0.4f, 0.6f, 0.275f, 0.3f };
 
@@ -38,7 +39,7 @@ UNUSED s32 D_801649D0[2];
 f32 D_801649D8[NUM_CAMERAS];
 f32 D_801649E8[NUM_CAMERAS];
 f32 D_801649F8[NUM_CAMERAS];
-s32 D_80164A08[4];
+s32 D_80164A08[8];
 s32 D_80164A18[NUM_CAMERAS];
 s32 D_80164A28;
 s32 D_80164A2C;
@@ -1046,6 +1047,7 @@ void func_8001EA0C(Camera* camera, Player* player, s8 arg2) {
 }
 
 void func_8001EE98(Player* player, Camera* camera, s8 index) {
+    if (LocalMP_IsActive() && LocalMP_IsFinished(camera->playerId)) return;
     s32 cameraIndex = camera->cameraId;
 
     switch (gModeSelection) {

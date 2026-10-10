@@ -98,7 +98,7 @@ void World::SetCurrentCup(Cup* cup) {
 
 void World::TickCameras() {
 
-    for (size_t i = 0; i < 4; i++) {
+    for (size_t i = 0; i < 8; i++) {
         ScreenContext* screen = &gScreenContexts[i];
         if (NULL == screen->pendingCamera) { continue; }
         if (screen->pendingCamera != screen->camera) {

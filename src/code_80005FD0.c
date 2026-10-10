@@ -1,3 +1,4 @@
+#include "port/LocalMultiplayer.h"
 #include <libultraship.h>
 #include <macros.h>
 #include <defines.h>
@@ -159,7 +160,7 @@ VehicleStuff gBoxTruckList[NUM_RACE_BOX_TRUCKS];
 VehicleStuff gSchoolBusList[NUM_RACE_SCHOOL_BUSES];
 VehicleStuff gTankerTruckList[NUM_RACE_TANKER_TRUCKS];
 VehicleStuff gCarList[NUM_RACE_CARS];
-s32 D_80163DD8[4];
+s32 D_80163DD8[8];
 BombKart gBombKarts[NUM_BOMB_KARTS_MAX];
 struct Collision gBombKartCollision[NUM_BOMB_KARTS_MAX];
 struct unexpiredActors gUnexpiredActorsList[8];
@@ -179,7 +180,7 @@ s32 gNumPathPointsTraversed[10];
 s16 gGetPlayerByCharacterId[10];
 s32 D_8016448C;
 TrackPathPoint* gCurrentTrackPath;
-f32 D_80164498[4];
+f32 D_80164498[8];
 f32 gLapCompletionPercentByPlayerId[10];    // D_801644A8
 f32 gCourseCompletionPercentByPlayerId[10]; // D_801644D0
 s16 bInMultiPathSection[12];
@@ -640,7 +641,7 @@ s32 set_vehicle_render_distance_flags(Vec3f vehiclePos, f32 renderDistance, s32 
             numScreens = 2;
             break;
         case SCREEN_MODE_3P_4P_SPLITSCREEN:
-            numScreens = gPlayerCount;
+            numScreens = LocalMP_Count();
             break;
         default:
             numScreens = 1;
@@ -650,7 +651,7 @@ s32 set_vehicle_render_distance_flags(Vec3f vehiclePos, f32 renderDistance, s32 
     if (!gDemoMode) {
         player = gPlayerOne;
         // Checks distance from each player.
-        for (i = 0; i < gPlayerCount; i++, player++) {
+        for (i = 0; i < LocalMP_Count(); i++, player++) {
             if (((player->type & PLAYER_HUMAN) != 0) && ((player->type & PLAYER_CPU) == 0)) {
                 playerX = player->pos[0];
                 playerZ = player->pos[2];
@@ -739,10 +740,10 @@ void set_places(void) {
             return; // HEY! returns, not breaks
         case GRAND_PRIX:
         case TIME_TRIALS:
-            var_t4 = NUM_PLAYERS;
+            var_t4 = LocalMP_IsActive() ? LocalMP_RacerCount() : NUM_PLAYERS;
             break;
         case VERSUS:
-            var_t4 = gPlayerCount;
+            var_t4 = LocalMP_Count();
             break;
     }
 
@@ -829,10 +830,10 @@ void update_player_rankings(void) {
             return; // HEY! returns, not breaks
         case GRAND_PRIX:
         case TIME_TRIALS:
-            var_a2 = 8;
+            var_a2 = LocalMP_IsActive() ? LocalMP_RacerCount() : 8;
             break;
         case VERSUS:
-            var_a2 = gPlayerCount;
+            var_a2 = LocalMP_Count();
             break;
     }
 
@@ -1298,7 +1299,7 @@ bool func_800088D8(s32 playerId, s16 lapNum, s16 arg2) {
     }
 
     var_a0_4 = 0;
-    for (i = 0; i < gPlayerCount; i++) {
+    for (i = 0; i < LocalMP_Count(); i++) {
         if (gGPCurrentRaceRankByPlayerId[i] < arg2) {
             var_a0_4++;
         }
@@ -1539,15 +1540,16 @@ void update_player_path_completion(s32 playerId, Player* player) {
     }
     if ((player->type & PLAYER_HUMAN) && !(player->type & PLAYER_CPU)) {
         detect_wrong_player_direction(playerId, player);
-        if ((gModeSelection == GRAND_PRIX) && (gPlayerCount == 2) && (playerId == 0)) {
-            if (gGPCurrentRaceRankByPlayerIdDup[PLAYER_ONE] < gGPCurrentRaceRankByPlayerIdDup[PLAYER_TWO]) {
-                gBestRankedHumanPlayer = PLAYER_ONE;
-            } else {
-                gBestRankedHumanPlayer = PLAYER_TWO;
+    }
+    // Keep the CPU rivals tracking the leading human after player one finishes.
+    if ((gModeSelection == GRAND_PRIX) && (LocalMP_Count() >= 2) && (playerId == 0)) {
+        gBestRankedHumanPlayer = PLAYER_ONE;
+        for (s32 human = 1; human < LocalMP_Count(); human++) {
+            if (gGPCurrentRaceRankByPlayerIdDup[human] <
+                gGPCurrentRaceRankByPlayerIdDup[gBestRankedHumanPlayer]) {
+                gBestRankedHumanPlayer = human;
             }
         }
-    } else {
-        //????
     }
     update_player_position_factor(playerId, sSomeNearestPathPoint, gPlayerPathIndex);
 }
@@ -1581,7 +1583,7 @@ void update_player_timer_sound(s32 playerId, UNUSED Player* unused) {
     s32 var_s0;
 
     if (D_801633C8[playerId] >= 0x65) {
-        for (var_s0 = 0; var_s0 < gPlayerCount; var_s0++) {
+        for (var_s0 = 0; var_s0 < LocalMP_Count(); var_s0++) {
             if ((gGPCurrentRaceRankByPlayerId[playerId] < gGPCurrentRaceRankByPlayerId[var_s0]) &&
                 (gGPCurrentRaceRankByPlayerId[playerId] == gPreviousGPCurrentRaceRankByPlayerId[var_s0]) &&
                 (gGPCurrentRaceRankByPlayerId[var_s0] == gPreviousGPCurrentRaceRankByPlayerId[playerId])) {
@@ -1602,6 +1604,7 @@ void update_player_timer_sound(s32 playerId, UNUSED Player* unused) {
 }
 
 void update_player(s32 playerId) {
+    if (LocalMP_IsActive() && LocalMP_IsFinished(playerId)) return;
     UNUSED s32 pad[14];
     s16 var_a0_2;
     s16 newAngle;
@@ -1752,7 +1755,7 @@ void update_player(s32 playerId) {
                         regulate_cpu_speed(playerId, gPreviousCpuTargetSpeed[playerId], player);
                         return;
                     }
-                    if ((gPlayerCount > 0) && (gPlayerCount < 3) && (D_80163330[playerId] == 1) &&
+                    if ((LocalMP_Count() > 0) && (LocalMP_Count() < NUM_PLAYERS) && (D_80163330[playerId] == 1) &&
                         (D_8016334C[playerId] < gGPCurrentRaceRankByPlayerId[playerId])) {
                         gPreviousCpuTargetSpeed[playerId] = 8.333333f;
                     } else if (D_80162FD0 == (s16) 1U) {
@@ -3066,7 +3069,7 @@ void func_8000DF8C(s32 bombKartId) {
                 }
             } else {
 
-                for (var_a0 = 0; var_a0 < gPlayerCount; var_a0++) {
+                for (var_a0 = 0; var_a0 < LocalMP_RacerCount(); var_a0++) {
                     var_v0 = &gPlayers[var_a0];
                     if (!(var_v0->effects & 0x80000000)) {
                         temp_f0 = var_f22 - var_v0->pos[0];
@@ -3366,6 +3369,7 @@ void func_8000F0E0(void) {
 }
 
 void func_8000F124(void) {
+    const s32 humanCount = LocalMP_Count();
     s32 var_a1;
     s32 i, j;
 
@@ -3380,26 +3384,20 @@ void func_8000F124(void) {
         return;
     }
 
+    if (humanCount < 1 || humanCount >= NUM_PLAYERS) return;
     for (i = 0; i < 2; i++) {
 
         while (1) {
             D_80163348[i] = random_int(8);
 
-            if (gPlayerCount > 2) {
-                break;
-            }
-            if (gPlayerCount < 1) {
-                break;
-            }
-
             var_a1 = 0;
 
-            for (j = 0; j < gPlayerCount; j++) {
+            for (j = 0; j < humanCount; j++) {
                 if (gCharacterSelections[j] == D_80163348[i]) {
                     var_a1 = 1;
                 }
             }
-            for (j = 0; j < i; j++) {
+            for (j = 0; humanCount < 7 && j < i; j++) {
                 if (D_80163348[j] == D_80163348[i]) {
                     var_a1 = 1;
                 }
@@ -3570,11 +3568,23 @@ void init_players(void) {
 #endif
     if (gDemoMode == DEMO_MODE_INACTIVE) {
 
-        if (gModeSelection == GRAND_PRIX) {
+        if (gModeSelection == GRAND_PRIX &&
+            (!LocalMP_IsActive() || LocalMP_RacerCount() > LocalMP_Count())) {
             for (i = 0; i < 2; i++) {
-                D_80163344[i] = gGetPlayerByCharacterId[D_80163348[i]];
-                D_80163330[D_80163344[i]] = 1;
-                D_8016334C[D_80163344[i]] = i;
+                if (LocalMP_IsActive()) {
+                    // Character lookup can resolve to another human when racers
+                    // repeat a character. Rival AI belongs to actual CPU slots.
+                    const s32 botCount = LocalMP_RacerCount() - LocalMP_Count();
+                    D_80163344[i] = LocalMP_Count() + i % botCount;
+                    if (i < botCount) {
+                        D_80163330[D_80163344[i]] = 1;
+                        D_8016334C[D_80163344[i]] = i;
+                    }
+                } else {
+                    D_80163344[i] = gGetPlayerByCharacterId[D_80163348[i]];
+                    D_80163330[D_80163344[i]] = 1;
+                    D_8016334C[D_80163344[i]] = i;
+                }
             }
         }
     }
@@ -6627,6 +6637,9 @@ void func_80019C50(s32 arg0) {
 }
 
 void look_behind_toggle(s32 cameraIdx) {
+    // The legacy rear-view draw helpers index the four-player screen tables.
+    // Keep the independent multiplayer cameras on their race view.
+    if (LocalMP_IsActive()) return;
     static bool lookBehindActive[NUM_CAMERAS] = {0};
     bool pressed = gControllers[cameraIdx].button & L_CBUTTONS; // button held
     ScreenContext* screenCtx = NULL;

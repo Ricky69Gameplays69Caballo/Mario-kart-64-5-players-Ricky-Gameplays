@@ -1,3 +1,4 @@
+#include "port/LocalMultiplayer.h"
 #include "Bat.h"
 #include "engine/World.h"
 #include "engine/CoreMath.h"
@@ -180,7 +181,7 @@ s32 OBat::func_8007D804(s32 objectIndex) {
     s32 someCount;
 
     someCount = 0;
-    for (loopIndex = 0; loopIndex < gPlayerCountSelection1; loopIndex++) {
+    for (loopIndex = 0; loopIndex < LocalMP_Count(); loopIndex++) {
         if (is_object_visible_on_camera(objectIndex, &camera1[loopIndex], 0x4000U) != 0) {
             someCount += 1;
         }
