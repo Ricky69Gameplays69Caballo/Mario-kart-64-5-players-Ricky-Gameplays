@@ -43,6 +43,12 @@ set(CPACK_DEB_COMPONENT_INSTALL YES)
 set(CPACK_EXTERNAL_ENABLE_STAGING YES)
 set(CPACK_EXTERNAL_PACKAGE_SCRIPT "${PROJECT_BINARY_DIR}/appimage-generate.cmake")
 
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64|ARM64")
+  set(LINUXDEPLOY_ARCH aarch64)
+else()
+  set(LINUXDEPLOY_ARCH x86_64)
+endif()
+
 set(APPIMAGE_SCRIPT_TEMPLATE [[
 include(CMakePrintHelpers)
 cmake_print_variables(CPACK_TEMPORARY_DIRECTORY)
@@ -51,18 +57,22 @@ cmake_print_variables(CPACK_PACKAGE_DIRECTORY)
 cmake_print_variables(CPACK_PACKAGE_FILE_NAME)
 
 find_program(LINUXDEPLOY_EXECUTABLE
-  NAMES linuxdeploy linuxdeploy-x86_64.AppImage
+  NAMES linuxdeploy linuxdeploy-@LINUXDEPLOY_ARCH@.AppImage
   PATHS ${CPACK_PACKAGE_DIRECTORY}/linuxdeploy)
 
 if (NOT LINUXDEPLOY_EXECUTABLE)
   message(STATUS "Downloading linuxdeploy")
   set(LINUXDEPLOY_EXECUTABLE ${CPACK_PACKAGE_DIRECTORY}/linuxdeploy/linuxdeploy)
   file(DOWNLOAD 
-      https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-x86_64.AppImage
+      https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-@LINUXDEPLOY_ARCH@.AppImage
       ${LINUXDEPLOY_EXECUTABLE}
       INACTIVITY_TIMEOUT 10
       LOG ${CPACK_PACKAGE_DIRECTORY}/linuxdeploy/download.log
       STATUS LINUXDEPLOY_DOWNLOAD)
+  list(GET LINUXDEPLOY_DOWNLOAD 0 LINUXDEPLOY_DOWNLOAD_CODE)
+  if(NOT LINUXDEPLOY_DOWNLOAD_CODE EQUAL 0)
+    message(FATAL_ERROR "linuxdeploy download failed: ${LINUXDEPLOY_DOWNLOAD}")
+  endif()
   execute_process(COMMAND chmod +x ${LINUXDEPLOY_EXECUTABLE} COMMAND_ECHO STDOUT)
 endif()
 
@@ -84,7 +94,11 @@ execute_process(
     $<$<BOOL:$<TARGET_PROPERTY:@PROJECT_NAME@,APPIMAGE_ICON_FILE>>:--icon-file=$<TARGET_PROPERTY:@PROJECT_NAME@,APPIMAGE_ICON_FILE>>
     --output=appimage
     --verbosity=2
+  RESULT_VARIABLE APPIMAGE_RESULT
 )
+if(NOT APPIMAGE_RESULT EQUAL 0)
+  message(FATAL_ERROR "AppImage packaging failed: ${APPIMAGE_RESULT}")
+endif()
 ]])
 string(CONFIGURE "${APPIMAGE_SCRIPT_TEMPLATE}" APPIMAGE_SCRIPT @ONLY)
 file(GENERATE OUTPUT "${PROJECT_BINARY_DIR}/appimage-generate.cmake"
