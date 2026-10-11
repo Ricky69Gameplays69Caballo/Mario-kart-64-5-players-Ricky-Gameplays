@@ -14,14 +14,18 @@ An unofficial fork of **[HarbourMasters/SpaghettiKart](https://github.com/Harbou
 - Controller bindings and reusable profiles for all eight ports.
 - Adjustable racer render distance, from the original 1x range to 5x.
 - A reversible **All tracks completed** cheat toggle that unlocks Mirror mode and the alternate title background while enabled.
+- A **Skip to Grand Prix finale** cheat for 3–8 players, using current cup standings without awarding saved trophies.
+- Expanded podium ceremonies with the remaining racers as spectators, corrected shadows, and a row angled away from the winner's path.
 
 ## Getting started
 
 Download the **Windows x64** build from **[Releases](https://github.com/Ricky69Gameplays69Caballo/Mario-kart-64-5-players-Ricky-Gameplays/releases)**. Extract the entire ZIP, then open `Spaghettify.exe`. See the [release setup guide](docs/RELEASE-NOTES.md). Downloadable releases are Windows-only for now; macOS, Linux, ARM, and Android builds are deferred.
 
-Open the PC menu with **Escape**. Under **Multiplayer → Local play**, enable **Enable 8 players**, then move right past 4P on GAME SELECT to reach 5P–8P. Enable **Enable bots in 3 to 7 player grand prix** to fill available Grand Prix slots with bots. Either multiplayer option also exposes Grand Prix in the normal 3P/4P menus.
+Open the PC menu with **Escape**. **Enable 8 players** and **Enable bots in 3 to 7 player grand prix** now default to enabled; existing saved choices are preserved. These options are under **Multiplayer → Local play**. Move right past 4P on GAME SELECT to reach 5P–8P. Either multiplayer option also exposes Grand Prix in the normal 3P/4P menus.
 
 Use **Wide screen preference** and **Racer render distance** in the same menu. Controller profiles are in the controller bindings window. The completion toggle is under **Enhancements → Cheats**. Use the normal **C-right** input to change the shared map display.
+
+During a 3–8 player Grand Prix, **Enhancements → Cheats → Skip to Grand Prix finale** opens the ceremony using current cup standings without modifying saved trophies.
 
 This repository contains source changes and the custom multiplayer menu texture. ROMs, extracted game archives, saves, and personal controller settings are not included. Supply your own supported US Mario Kart 64 dump, as described in the [upstream setup guide](docs/UPSTREAM-README.md).
 
