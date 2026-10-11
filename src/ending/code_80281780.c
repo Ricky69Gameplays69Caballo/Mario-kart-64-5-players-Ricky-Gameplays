@@ -164,6 +164,7 @@ void setup_podium_ceremony(void) {
     load_kart_textures();
     init_hud();
     func_8001C05C();
+    position_ceremony_spectators();
     balloons_and_fireworks_init();
     init_camera_podium_ceremony();
     func_80093E60();

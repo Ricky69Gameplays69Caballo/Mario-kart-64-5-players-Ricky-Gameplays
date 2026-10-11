@@ -14,6 +14,7 @@
 #include "podium_ceremony_actors.h"
 #include "camera_junk.h"
 #include "player_controller.h"
+#include "spawn_players.h"
 #include "code_80057C60.h"
 #include "code_80005FD0.h"
 #include "code_80281C40.h"
@@ -478,6 +479,9 @@ void podium_ceremony_loop(void) {
         func_8001C14C();
         update_vehicles();
     }
+    // The fourth kart moves during the ceremony; keep its audience alongside
+    // its current position rather than leaving them at the original spawn.
+    position_ceremony_spectators();
     func_80281D00();
     func_80281540();
 #if DVDL
