@@ -70,8 +70,9 @@ int selectedArena = 0;
 int battleRemaining = 0;
 int battleWinner = -1;
 int raceInCup = 0;
-int request = 0; // 1: new session, 2: next race, 3: rematch, 4: lobby, 5: refresh menu, 6: ceremony
+int request = 0; // 1: new session, 2: next race, 3: rematch, 4: lobby, 5: refresh menu, 6: ceremony, 9: finale cheat
 bool ceremonyPending = false;
+int ceremonyRacers = 4;
 bool finalLapMusicStarted = false;
 int ceremonyCharacter = 0;
 int ceremonyRank = 0;
@@ -291,7 +292,7 @@ float ItemWindowScale() {
 }
 
 extern "C" int MultiplayerOptions_EightEnabled(void) {
-    return CVarGetInteger(CVAR_MULTIPLAYER_EIGHT, 0) != 0;
+    return CVarGetInteger(CVAR_MULTIPLAYER_EIGHT, 1) != 0;
 }
 extern "C" float RacerRenderDistance_Multiplier(void) {
     if (gGamestate != RACING) return 1.f;
@@ -301,7 +302,7 @@ extern "C" float RacerRenderDistance_FarPlane(float normalFar) {
     return normalFar * RacerRenderDistance_Multiplier();
 }
 extern "C" int MultiplayerOptions_BotsEnabled(void) {
-    return CVarGetInteger(CVAR_MULTIPLAYER_BOTS, 0) != 0;
+    return CVarGetInteger(CVAR_MULTIPLAYER_BOTS, 1) != 0;
 }
 extern "C" int MultiplayerOptions_CanChange(void) {
     // Include transitions so a pending race cannot have its configuration changed.
@@ -596,16 +597,57 @@ extern "C" int LocalMP_IsFinished(int player) {
     return player < 0 || player >= racers || results || (mode != 2 && finished[player]);
 }
 extern "C" int LocalMP_CeremonyResult(int* character, int* rank) {
+    // Reset for native ceremonies too, so a previous expanded cup cannot
+    // leave extra spectators in a later normal ceremony.
+    ceremonyRacers = 4;
     if (!ceremonyPending || gGamestate != ENDING) return false;
+    ceremonyRacers = std::clamp(racers, 4, NUM_PLAYERS);
     *character = ceremonyCharacter;
     *rank = ceremonyRank;
     ceremonyPending = false;
     return true;
 }
 
+extern "C" int LocalMP_CeremonyRacerCount(void) {
+    return gGamestate == ENDING ? ceremonyRacers : 4;
+}
+
+extern "C" int LocalMP_CanSkipGrandPrixFinale(void) {
+    const int humans = LocalMP_Count();
+    return gGamestate == RACING && gGamestateNext == RACING &&
+           gModeSelection == GRAND_PRIX && !gDemoMode && !gIsInQuitToMenuTransition &&
+           humans >= 3 && humans <= 8 && !GetWorld()->Cups.empty();
+}
+
+extern "C" void LocalMP_SkipGrandPrixFinale(void) {
+    // Change game state on the next logic tick, never while drawing the PC menu.
+    if (!request && LocalMP_CanSkipGrandPrixFinale()) request = 9;
+}
+
 extern "C" void LocalMP_ProcessRequest(void) {
     const int action = std::exchange(request, 0);
     if (!action) return;
+    if (action == 9) {
+        if (!LocalMP_CanSkipGrandPrixFinale()) return;
+        if (!LocalMP_IsActive()) {
+            // The native 3/4-player GP with bots stores points by character.
+            // Snapshot its actual grid into slots before using the shared ending.
+            participants = gPlayerCount;
+            racers = NUM_PLAYERS;
+            mode = 0;
+            engineClass = gCCSelection;
+            selectedCup = static_cast<int>(GetWorld()->GetCupIndex());
+            for (int player = 0; player < NUM_PLAYERS; ++player) {
+                characters[player] = gPlayers[player].characterId;
+                points[player] = gGPPointsByCharacterId[characters[player]];
+            }
+        }
+        if (gIsGamePaused) func_800C9F90(0);
+        // This previews the ceremony without granting unearned saved trophies.
+        raceInCup = static_cast<int>(GetWorld()->Cups.at(selectedCup)->GetSize()) - 1;
+        OpenCeremony();
+        return;
+    }
     if (action == 6) {
         if (LocalMP_IsActive() && results && CupComplete()) OpenCeremony();
         return;

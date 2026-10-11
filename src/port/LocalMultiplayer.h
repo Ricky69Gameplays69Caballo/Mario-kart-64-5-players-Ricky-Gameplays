@@ -32,6 +32,11 @@ int LocalMP_RacerCount(void);
 int LocalMP_IsFinished(int player);
 // Consume the expanded cup's slot-based ceremony result during ending setup.
 int LocalMP_CeremonyResult(int* character, int* rank);
+// Podium slots plus spectators, retained after the ceremony result is consumed.
+int LocalMP_CeremonyRacerCount(void);
+// One-shot ceremony preview using the current GP standings for 3-8 humans.
+int LocalMP_CanSkipGrandPrixFinale(void);
+void LocalMP_SkipGrandPrixFinale(void);
 void LocalMP_ProcessRequest(void);
 void LocalMP_OnInput(void);
 void LocalMP_ResetRace(void);
