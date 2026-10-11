@@ -919,8 +919,37 @@ void func_8003BE30(void) {
     spawn_player(gPlayerSix, 5, -3691.506f, -6.822f, -6.95f, 36400.0f, 0, 0x7000);
     spawn_player(gPlayerSeven, 6, -3475.028f, -998.485f, -8.059f, 45500.0f, 0, 0x7000);
     spawn_player(gPlayerEight, 7, -3025.772f, 110.039f, -23.224f, 28210.0f, 0, 0x7000);
+    for (s32 rank = 4; rank < LocalMP_CeremonyRacerCount(); ++rank) {
+        // These slots are spectators, not additional podium drivers. Keep
+        // them stationary instead of indexing the four cinematic AI paths.
+        spawn_player(&gPlayers[rank], rank, -3025.772f, 110.039f, -23.224f, 28210.0f,
+                     gCharacterIdByGPOverallRank[rank],
+                     PLAYER_EXISTS | PLAYER_CPU | PLAYER_START_SEQUENCE);
+    }
     D_80164A28 = 0;
     func_80039AE4();
+}
+
+void position_ceremony_spectators(void) {
+    // Rotate the former -X row 45 degrees to the racers' left as they face
+    // the podium, pivoting on the fourth kart to clear the winner's route.
+    static const f32 offsets[] = { -36.0f, -72.0f, -108.0f, -144.0f };
+    const f32 diagonal = 0.7071067811865475f;
+    const Player* spectator = gPlayerFour;
+    for (s32 rank = 4; rank < LocalMP_CeremonyRacerCount(); ++rank) {
+        Player* player = &gPlayers[rank];
+        player->pos[0] = spectator->pos[0] + offsets[rank - 4] * diagonal;
+        player->pos[2] = spectator->pos[2] - offsets[rank - 4] * diagonal;
+        const f32 groundHeight = spawn_actor_on_surface(player->pos[0], spectator->pos[1] + 50.0f,
+                                                        player->pos[2]);
+        player->pos[1] = groundHeight + player->boundingBoxSize;
+        // Stationary spectators skip driving physics, which normally refreshes
+        // this ground height used by render_player_shadow.
+        player->unk_074 = groundHeight;
+        vec3f_copy_return(player->oldPos, player->pos);
+        player->rotation[1] = spectator->rotation[1];
+        gPlayerPathY[rank] = player->pos[1];
+    }
 }
 
 void func_8003C0F0(void) {

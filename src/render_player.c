@@ -554,17 +554,13 @@ void func_80021B0C(void) {
         func_8006E7CC(gPlayerEight, 7, 0);
     }
     if (gGamestate == ENDING) {
-        if (gPlayerOne->kartProps & UNUSED_0x2000) {
-            render_player_shadow_credits(gPlayerOne, 0, 0);
-        }
-        if (gPlayerTwo->kartProps & UNUSED_0x2000) {
-            render_player_shadow_credits(gPlayerTwo, 1, 0);
-        }
-        if (gPlayerThree->kartProps & UNUSED_0x2000) {
-            render_player_shadow_credits(gPlayerThree, 2, 0);
-        }
-        if (gPlayerFour->kartProps & UNUSED_0x2000) {
-            render_player_shadow_credits(gPlayerFour, 3, 0);
+        // Only the podium's three animated platforms have special shadows.
+        // Spectators use the normal terrain shadow in render_player.
+        for (s32 player = 0; player < 3; ++player) {
+            if ((gPlayers[player].type & PLAYER_EXISTS) &&
+                (gPlayers[player].kartProps & UNUSED_0x2000)) {
+                render_player_shadow_credits(&gPlayers[player], player, 0);
+            }
         }
     }
 }
@@ -1278,6 +1274,8 @@ void render_player_shadow_credits(Player* player, s8 playerId, s8 screenId) {
     f32 spAC;
     UNUSED Vec3f pad3;
     Vec3f sp94 = { 9.0f, 7.0f, 5.0f };
+
+    if (playerId < 0 || playerId >= 3) return;
 
     temp_t9 = (u16) (player->unk_048[screenId] + player->rotation[1] + player->unk_0C0) / 128;
     spC0 = -player->rotation[1] - player->unk_0C0;
