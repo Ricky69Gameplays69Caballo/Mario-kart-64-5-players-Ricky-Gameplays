@@ -371,14 +371,14 @@ void PortMenu::AddMultiplayer() {
         .CVar(CVAR_MULTIPLAYER_EIGHT)
         .PreFunc(outsideRace)
         .Callback([](WidgetInfo&) { MultiplayerOptions_OnEightChanged(); })
-        .Options(CheckboxOptions().DefaultValue(false).Tooltip(
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "Adds 5P-8P choices to GAME SELECT: move right past 4P. Use the game controls to choose mode, class, characters and cup. "
             "F8 opens the optional PC lobby. Wide screen preference chooses who fills spare layout space."));
     AddWidget(path, "Enable bots in 3 to 7 player grand prix", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_MULTIPLAYER_BOTS)
         .PreFunc(outsideRace)
         .Callback([](WidgetInfo&) { MultiplayerOptions_OnBotsChanged(); })
-        .Options(CheckboxOptions().DefaultValue(false).Tooltip(
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "Adds Grand Prix with bots to the normal 3/4-player menu. With Enable 8 players on, GP for 5-7 humans also fills the grid to eight. "
             "Changing this option returns to the main game menu. Both multiplayer options can be enabled together."));
     static const std::unordered_map<int32_t, const char*> widePlayerOptions = {
@@ -460,6 +460,15 @@ void PortMenu::AddEnhancements() {
 
     path = { "Enhancements", "Cheats", SECTION_COLUMN_1 };
     AddSidebarEntry("Enhancements", "Cheats", 3);
+    AddWidget(path, "Skip to Grand Prix finale", WIDGET_BUTTON)
+        .PreFunc([](WidgetInfo& info) {
+            info.options->disabled = !LocalMP_CanSkipGrandPrixFinale();
+            info.options->disabledTooltip = "Start a Grand Prix with 3 to 8 human players first.";
+        })
+        .Callback([](WidgetInfo&) { LocalMP_SkipGrandPrixFinale(); })
+        .Options(ButtonOptions().Tooltip(
+            "Skip directly to the award ceremony using current cup points. Equal points use controller order. "
+            "Works in 3-8 player Grand Prix, with or without bots. Does not award saved trophies."));
     AddWidget(path, "All tracks completed", WIDGET_CVAR_CHECKBOX)
         .CVar("gAllTracksCompleted")
         .Options(CheckboxOptions().Tooltip(
