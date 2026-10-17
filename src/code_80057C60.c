@@ -80,9 +80,9 @@ u32 D_80165638;
 UNUSED s32 D_80165640[2];
 u32 D_80165648;
 UNUSED u32 D_80165650[2];
-u32 D_80165658[8];
+u32 D_80165658[NUM_RACERS];
 s32 D_80165678;
-UNUSED s32 D_80165680[12];
+UNUSED s32 D_80165680[NUM_RACERS];
 u16 D_801656B0;
 UNUSED s32 D_801656B8[2];
 u16 D_801656C0;
@@ -140,7 +140,7 @@ UNUSED s8 D_801657B3;
 s8 D_801657B4;
 s8 D_801657B8[16];
 s8 D_801657C8;
-s8 D_801657D0[8];
+s8 D_801657D0[NUM_RACERS];
 s8 D_801657D8;
 UNUSED s16 D_801657DA[2];
 UNUSED s8 D_801657E0;
@@ -230,10 +230,10 @@ Mtx D_80183D60;
  * this variable, but it appears to go unreferenced
  **/
 s32 D_80183DA0;
-f32 D_80183DA8[8];
+f32 D_80183DA8[NUM_RACERS];
 //! Lakitu?
-s32 gIndexLakituList[8];
-f32 D_80183DC8[8];
+s32 gIndexLakituList[NUM_RACERS];
+f32 D_80183DC8[NUM_RACERS];
 //! Indexes for the objects associated with the Bomb Karts
 s32 gIndexObjectBombKart[NUM_BOMB_KARTS_MAX];
 UNUSED s32 D_80183DF8[16];
@@ -253,7 +253,7 @@ Vec3f D_80183E70;
 s32 gNextFreeLeafParticle;
 Vec3su D_80183E80;
 //! Appears to be a list of object list indices for the Item Window part of the HUD
-s32 gItemWindowObjectByPlayerId[8];
+s32 gItemWindowObjectByPlayerId[NUM_RACERS];
 Vec3su D_80183E98;
 /**
  * Snowmen bodies in FrappeSnowland
@@ -282,7 +282,7 @@ s32 indexObjectList2[32];
  * I'm also not certain about its dimensions
  * I think the entires in this array are way over-sized
  */
-const char* gLakituTextureBuffer[8][2];
+const char* gLakituTextureBuffer[MAX_HUMAN_PLAYERS][2];
 /**
  * Boos in Banshee Boardwalk
  * Spawners for the 4 small fire breaths inside Bowser's Castle
@@ -295,7 +295,7 @@ const char** gLakituTexturePtr;
  */
 s32 indexObjectList4[32];
 //! Array of (4) Collisions?
-struct Collision D_8018C0B0[8];
+struct Collision D_8018C0B0[NUM_RACERS];
 /**
  * List of object list indices used for:
  *   Moles in Moo Moo Farm
@@ -332,13 +332,13 @@ s32 gObjectParticle4[gObjectParticle4_SIZE];
  * trees when you bonk into them
  */
 s32 gLeafParticle[gLeafParticle_SIZE];
-hud_player playerHUD[8];
+hud_player playerHUD[NUM_RACERS];
 /**
  * List of object list indices used by the clouds and stars in some stages
  * Also used for snowflakes like gObjectParticle1? Not sure what's up with that
  */
 s32 D_8018CC80[D_8018CC80_SIZE];
-struct_D_8018CE10 D_8018CE10[8];
+struct_D_8018CE10 D_8018CE10[NUM_RACERS];
 //! Unknown object index, only set for Kalimari Desert, never read
 s32 D_8018CF10;
 Camera* D_8018CF14;
@@ -346,28 +346,28 @@ s16 D_8018CF18;
 Player* D_8018CF1C;
 s16 D_8018CF20;
 UNUSED s32 D_8018CF24;
-Player* D_8018CF28[8];
+Player* D_8018CF28[NUM_RACERS];
 s16 D_8018CF48;
-s16 D_8018CF50[8];
+s16 D_8018CF50[NUM_RACERS];
 s16 D_8018CF60;
 //! This may be a list of tilemap flags on a per-camera basis
-s16 D_8018CF68[8];
+s16 D_8018CF68[NUM_RACERS];
 s16 D_8018CF78;
 /**
  * List of half-word character IDs indicating each character's
  * place in the current Grand Prix race's standings
  */
-s16 gGPCurrentRaceCharacterIdByRank[8];
+s16 gGPCurrentRaceCharacterIdByRank[NUM_RACERS];
 s16 D_8018CF90;
-s16 D_8018CF98[8];
+s16 D_8018CF98[NUM_RACERS];
 s16 D_8018CFA8;
-s8 D_8018CFAC[8];
+s8 D_8018CFAC[NUM_RACERS];
 s16 D_8018CFB0;
-s8 D_8018CFB4[8];
+s8 D_8018CFB4[NUM_RACERS];
 s16 D_8018CFB8;
-s8 D_8018CFBC[8];
+s8 D_8018CFBC[NUM_RACERS];
 s16 D_8018CFC0;
-s8 D_8018CFC4[8];
+s8 D_8018CFC4[NUM_RACERS];
 s16 D_8018CFC8;
 f32 D_8018CFCC;
 s16 D_8018CFD0;
@@ -781,7 +781,7 @@ void func_800590D4(void) {
         if (gModeSelection != BATTLE) {
             switch (gPlayerCountSelection1) {
                 case 1:
-                    if (gModeSelection != TIME_TRIALS) {
+                    if (gModeSelection != TIME_TRIALS || (LocalMP_IsActive() && LocalMP_RacerCount() > NUM_PLAYERS)) {
                         func_8004E800(PLAYER_ONE);
                         break;
                     }
@@ -818,7 +818,8 @@ void func_800591B4(void) {
                 if (D_801657F0 != false) {
                     func_800514BC();
                 }
-                if ((!gDemoMode) && (D_801657E8 != false)) {
+                if ((!gDemoMode) && (D_801657E8 != false) &&
+                    !(LocalMP_IsActive() && LocalMP_Count() > 1 && LocalMP_RacerCount() > NUM_PLAYERS)) {
                     if (D_80165800[0] != 0) {
                         func_8004EE54(0);
                         if (gModeSelection != BATTLE) {
@@ -1057,7 +1058,7 @@ void func_80059AC8(void) {
             D_8018CF68[i] = func_8008A890(&camera1[i]);
         }
 
-        for (i = 0; i < NUM_PLAYERS; i++) {
+        for (i = 0; i < LocalMP_RacerCount(); i++) {
             func_800892E0(i);
         }
 
@@ -1099,12 +1100,12 @@ void func_80059C50(void) {
     s32 playerId;
 
     func_8005A3C0();
-    for (someIndex = 0; someIndex < NUM_PLAYERS; someIndex++) {
+    for (someIndex = 0; someIndex < LocalMP_RacerCount(); someIndex++) {
         playerId = gGPCurrentRacePlayerIdByRank[someIndex];
         // I hate this dumb pointer access here
         gGPCurrentRaceCharacterIdByRank[someIndex] = (gPlayerOne + playerId)->characterId;
     }
-    for (someIndex = 0; someIndex < NUM_PLAYERS; someIndex++) {
+    for (someIndex = 0; someIndex < LocalMP_RacerCount(); someIndex++) {
         D_8018CF98[someIndex] = gGPCurrentRaceRankByPlayerId[someIndex];
     }
 }
@@ -1112,6 +1113,14 @@ void func_80059C50(void) {
 void func_80059D00(void) {
     if (LocalMP_IsActive()) {
         func_8005A99C(); func_8005A3C0(); func_8005A380();
+        if (LocalMP_Count() == 1) {
+            // Keep the original 1P HUD entrance and C-right modes, including
+            // its speedometer, when the rest of the grid consists of bots.
+            func_8005B914();
+            if (playerHUD[PLAYER_ONE].raceCompleteBool == 0) {
+                func_8005C360((gPlayerOne->speed / 18.0f) * 216.0f);
+            }
+        }
         for (s32 i = 0; i < LocalMP_Count(); i++) {
             func_80059820(i); func_8005D0FC(i);
         }
@@ -1300,7 +1309,7 @@ void func_8005A14C(s32 playerId) {
 
 void func_8005A380(void) {
     s32 temp_s0;
-    for (temp_s0 = 0; temp_s0 < NUM_PLAYERS; ++temp_s0) {
+    for (temp_s0 = 0; temp_s0 < LocalMP_RacerCount(); ++temp_s0) {
         func_8005A14C(temp_s0);
     }
 }
@@ -1308,7 +1317,8 @@ void func_8005A380(void) {
 void func_8005A3C0(void) {
     // Expanded views own separate C-right map/progress selections. Do not also
     // toggle the legacy shared four-player HUD from controller ports 1-4.
-    if (LocalMP_IsActive() && LocalMP_Count() > 4) return;
+    if (LocalMP_IsActive() && LocalMP_Count() > 1 &&
+        (LocalMP_Count() > 4 || LocalMP_RacerCount() > NUM_PLAYERS)) return;
     bool b = false;
     if ((gGamestate != ENDING) && (gGamestate != CREDITS_SEQUENCE) && !D_8018D204) {
         switch (gPlayerCountSelection1) {
@@ -2262,7 +2272,7 @@ void func_8005C980(void) {
     s32 var_v0;
     s32 sp0 = 0; //! @warning this variable was uninitialized in decomp. This was likely supposed to be random!
     s32 temp_v1;
-    for (var_v0 = 0; var_v0 < NUM_PLAYERS; var_v0++) {
+    for (var_v0 = 0; var_v0 < LocalMP_RacerCount(); var_v0++) {
         temp_v1 = gGPCurrentRaceRankByPlayerId[var_v0];
         if (D_80165590 == 0) {
             D_8018CF98[var_v0] = temp_v1;
@@ -2273,7 +2283,7 @@ void func_8005C980(void) {
         }
     }
 
-    for (var_v0 = 0; var_v0 < NUM_PLAYERS; var_v0++) {
+    for (var_v0 = 0; var_v0 < LocalMP_RacerCount(); var_v0++) {
         sp0 = gGPCurrentRacePlayerIdByRank[var_v0];
         D_8018CF50[var_v0] = sp0;
         if (D_80165590 == 0) {
@@ -6483,7 +6493,7 @@ void func_8006D474(Player* player, s8 playerId, s8 screenId) {
 
 void func_8006DC54(Player* player, s8 playerId, s8 screenId) {
     s16 i;
-    s32 bitwiseMask;
+    u64 bitwiseMask;
 
     bitwiseMask = SIDE_OF_KART << (screenId * 4);
     if (bitwiseMask == (player->unk_002 & bitwiseMask)) {
@@ -6497,7 +6507,7 @@ void func_8006DC54(Player* player, s8 playerId, s8 screenId) {
 
 void func_8006DD3C(Player* player, s8 playerId, s8 screenId) {
     s16 temp_s0;
-    s32 temp_v0;
+    u64 temp_v0;
 
     temp_v0 = SIDE_OF_KART << (screenId * 4);
     if (temp_v0 == (player->unk_002 & temp_v0)) {

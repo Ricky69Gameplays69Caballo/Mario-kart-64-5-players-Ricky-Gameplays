@@ -25,9 +25,9 @@ class ABus : public AActor {
     Vec3f Velocity;
     Vec3s Rotation;
     f32 SomeMultiplierTheSequel;
-    s8 SomeFlagsTheSequel = 0;
+    u16 SomeFlagsTheSequel = 0;
     u16 WaypointIndex;
-    s8 SomeFlags = 0;
+    u16 SomeFlags = 0;
     s16 SomeType;
 
     f32 SomeArg3 = 55.0f;

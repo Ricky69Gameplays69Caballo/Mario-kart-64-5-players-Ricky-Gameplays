@@ -507,7 +507,7 @@ s32 func_8028336C(UNUSED CinematicCamera* arg0, UNUSED Camera* camera) {
     }
     switch (gGamestate) {
         case ENDING:
-            D_802876D8 = sp20[D_802874D8.unk1D];
+            D_802876D8 = sp20[D_802874D8.unk1D < 8 ? D_802874D8.unk1D : 7];
             break;
 
         case CREDITS_SEQUENCE:

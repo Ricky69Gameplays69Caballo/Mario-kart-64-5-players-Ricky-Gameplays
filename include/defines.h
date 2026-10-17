@@ -136,7 +136,9 @@ enum PlayerId {
     PLAYER_EIGHT = 7
 };
 
-#define NUM_PLAYERS 8
+#define NUM_PLAYERS 8 // Original race balance and character roster.
+#define MAX_HUMAN_PLAYERS 16 // Controller ports, cameras and per-human state.
+#define NUM_RACERS 16 // Maximum race grid; slots beyond the humans are CPU racers.
 
 #define MARIO_SIZE 0.75f
 #define LUIGI_SIZE 0.75f
@@ -370,11 +372,11 @@ enum PLACE { FIRST_PLACE, SECOND_PLACE, THIRD_PLACE, FOURTH_PLACE };
 /* UNK_002 has something to do with player animations. Each player has a 32-bit
 flag broken into 8 groups of 4 bits. Those 4 bits affect how each of the 8 players
 appear to the specified player */
-#define CHANGING_ANIMATION 0x1u // Seems to be set when the kart animation has to change.
-#define UNK_002_UNKNOWN_0x2 0x2u
-#define UNK_002_UNKNOWN_0x4 0x4u /* Unclear, but has to do with viewing the side of player. At least tends to change if target
+#define CHANGING_ANIMATION 0x1ull // Seems to be set when the kart animation has to change.
+#define UNK_002_UNKNOWN_0x2 0x2ull
+#define UNK_002_UNKNOWN_0x4 0x4ull /* Unclear, but has to do with viewing the side of player. At least tends to change if target
 player spins. Something  with avoding rollover of aniamation frame data? */
-#define SIDE_OF_KART 0x8u // Seems to be whether you are in a rectangle shooting out from both sides of target player
+#define SIDE_OF_KART 0x8ull // Seems to be whether you are in a rectangle shooting out from both sides of target player
 
 #define WHISTLE 0x20     // Whistle spinout save graphic
 #define CRASH 0x40       // Crash! graphic (vertical tumble)

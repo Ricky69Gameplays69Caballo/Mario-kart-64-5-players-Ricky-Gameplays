@@ -1,4 +1,5 @@
 #include "Engine.h"
+#include "MultiplayerDisplays.h"
 
 #include <cstdlib>
 #include "ship/utils/StringHelper.h"
@@ -365,6 +366,7 @@ void GameEngine::Create() {
 }
 
 void GameEngine::Destroy() {
+    MultiplayerDisplays_Stop();
     AudioExit();
 #ifdef __SWITCH__
     Ship::Switch::Exit();
@@ -435,6 +437,7 @@ void GameEngine::RunCommands(Gfx* pool, const std::vector<std::unordered_map<Mtx
  * or translated into modern graphics commands
  */
 void GameEngine::ProcessGfxCommands(Gfx* pool) {
+    MultiplayerDisplays_Update();
     std::vector<std::unordered_map<Mtx*, MtxF>> mtx_replacements;
     int target_fps = GameEngine::Instance->GetInterpolationFPS();
     if (CVarGetInteger("gModifyInterpolationTargetFPS", 0)) {

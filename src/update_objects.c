@@ -2413,8 +2413,8 @@ s32 func_8007B040(s32 objectIndex, s32 playerId) {
     s32 var_t3;
     s32 temp_a0;
     s32 item;
-    s32 sp50[8];
-    s32 sp40[8];
+    s32 sp50[MAX_HUMAN_PLAYERS];
+    s32 sp40[MAX_HUMAN_PLAYERS];
     s32 var_v1_2;
     Player* sp38;
     s16 temp_a1;
@@ -2452,7 +2452,7 @@ s32 func_8007B040(s32 objectIndex, s32 playerId) {
             }
         }
         if (var_a3 != 0) {
-            item = random_int(var_a3);
+            item = random_int(var_a3 - 1);
             temp_a1 = sp40[item];
             gObjectList[objectIndex].unk_0A2 = temp_a1;
             gObjectList[objectIndex].textureListIndex = temp_a1;

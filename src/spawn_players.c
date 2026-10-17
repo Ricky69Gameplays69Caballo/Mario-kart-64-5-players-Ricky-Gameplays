@@ -29,38 +29,41 @@
 #include "effects.h"
 #include "decode.h"
 #include "port/Game.h"
+#include "port/Engine.h"
+#include "racing/actors.h"
+#include "assets/other/tracks/big_donut/big_donut_data.h"
 
-f32 D_80165210[8];
-f32 D_80165230[8];
-UNUSED f32 D_80165250[8];
-s16 D_80165270[8];
-f32 gPlayerCurrentSpeed[8];
-f32 gPlayerWaterLevel[8];
-s32 D_801652C0[8];
-s32 D_801652E0[8];
-s16 D_80165300[8];
+f32 D_80165210[NUM_RACERS];
+f32 D_80165230[NUM_RACERS];
+UNUSED f32 D_80165250[NUM_RACERS];
+s16 D_80165270[NUM_RACERS];
+f32 gPlayerCurrentSpeed[NUM_RACERS];
+f32 gPlayerWaterLevel[NUM_RACERS];
+s32 D_801652C0[NUM_RACERS];
+s32 D_801652E0[NUM_RACERS];
+s16 D_80165300[NUM_RACERS];
 // Shadows values from gPathIndexByPlayerId, but is an array
-u16 gCopyPathIndexByPlayerId[8];
+u16 gCopyPathIndexByPlayerId[NUM_RACERS];
 // Shadows values from gNearestPathPointByPlayerId, but is an array
-s16 gCopyNearestWaypointByPlayerId[8];
-s16 D_80165330[8];
+s16 gCopyNearestWaypointByPlayerId[NUM_RACERS];
+s16 D_80165330[NUM_RACERS];
 s16 D_80165340;
 UNUSED s32 D_80165348[29];
-Player* D_801653C0[8];
+Player* D_801653C0[NUM_RACERS];
 
-bool gPlayerIsThrottleActive[8];
-s32 gPlayerAButtonComboActiveThisFrame[8];
-s32 gFrameSinceLastACombo[8];
-s32 gCountASwitch[8];
-bool gIsPlayerTripleAButtonCombo[8];
-s32 gTimerBoostTripleACombo[8];
+bool gPlayerIsThrottleActive[NUM_RACERS];
+s32 gPlayerAButtonComboActiveThisFrame[NUM_RACERS];
+s32 gFrameSinceLastACombo[NUM_RACERS];
+s32 gCountASwitch[NUM_RACERS];
+bool gIsPlayerTripleAButtonCombo[NUM_RACERS];
+s32 gTimerBoostTripleACombo[NUM_RACERS];
 
-bool gPlayerIsBrakeActive[8];
-s32 gPlayerBButtonComboActiveThisFrame[8];
-s32 gFrameSinceLastBCombo[8];
-s32 gCountBChangement[8];
-bool gIsPlayerTripleBButtonCombo[8];
-s32 gTimerBoostTripleBCombo[8];
+bool gPlayerIsBrakeActive[NUM_RACERS];
+s32 gPlayerBButtonComboActiveThisFrame[NUM_RACERS];
+s32 gFrameSinceLastBCombo[NUM_RACERS];
+s32 gCountBChangement[NUM_RACERS];
+bool gIsPlayerTripleBButtonCombo[NUM_RACERS];
+s32 gTimerBoostTripleBCombo[NUM_RACERS];
 
 s16 chooseCPUPlayers[7];
 
@@ -283,7 +286,7 @@ void spawn_player(Player* player, s8 playerIndex, f32 startingRow, f32 startingC
 
     idx = playerIndex;
 
-    for (s32 view = 0; view < 8; view++) {
+    for (s32 view = 0; view < MAX_HUMAN_PLAYERS; view++) {
         player->unk_048[view] = player->unk_050[view] = 0;
         player->unk_0CC[view] = player->unk_0D4[view] = 0;
         player->animFrameSelector[view] = player->animGroupSelector[view] = 0;
@@ -902,6 +905,7 @@ void spawn_players_4p_battle(f32* arg0, f32* arg1, f32 arg2) {
 }
 
 void func_8003BE30(void) {
+    init_extra_racer_vertices();
     spawn_player(gPlayerOne, 0, -2770.774f, -345.187f, -34.6f, 0.0f, gCharacterIdByGPOverallRank[0],
                  (PLAYER_EXISTS | PLAYER_CPU | PLAYER_START_SEQUENCE));
     spawn_player(gPlayerTwo, 1, -3691.506f, -6.822f, -6.95f, 36400.0f, gCharacterIdByGPOverallRank[1],
@@ -933,13 +937,13 @@ void func_8003BE30(void) {
 void position_ceremony_spectators(void) {
     // Rotate the former -X row 45 degrees to the racers' left as they face
     // the podium, pivoting on the fourth kart to clear the winner's route.
-    static const f32 offsets[] = { -36.0f, -72.0f, -108.0f, -144.0f };
     const f32 diagonal = 0.7071067811865475f;
     const Player* spectator = gPlayerFour;
     for (s32 rank = 4; rank < LocalMP_CeremonyRacerCount(); ++rank) {
         Player* player = &gPlayers[rank];
-        player->pos[0] = spectator->pos[0] + offsets[rank - 4] * diagonal;
-        player->pos[2] = spectator->pos[2] - offsets[rank - 4] * diagonal;
+        const f32 offset = -36.0f * (rank - 3);
+        player->pos[0] = spectator->pos[0] + offset * diagonal;
+        player->pos[2] = spectator->pos[2] - offset * diagonal;
         const f32 groundHeight = spawn_actor_on_surface(player->pos[0], spectator->pos[1] + 50.0f,
                                                         player->pos[2]);
         player->pos[1] = groundHeight + player->boundingBoxSize;
@@ -965,6 +969,33 @@ void func_8003C0F0(void) {
     }
 }
 
+static f32 big_donut_clear_spawn_offset(s32 playerIndex, f32 radius, f32 offset,
+                                        const struct ActorSpawnData* itemBoxes) {
+    if (itemBoxes == NULL) return offset;
+    const s32 pad = playerIndex & 3;
+    const f32 direction = offset < 0.0f ? -1.0f : 1.0f;
+    // Move along the flat starting row, away from its center. Character choices
+    // can repeat, so this belongs to the spawn slot rather than to Yoshi.
+    for (s32 attempt = 0; attempt <= 4; ++attempt) {
+        const f32 candidate = offset + direction * 60.0f * attempt;
+        const f32 x = pad < 2 ? candidate : (pad == 2 ? -radius : radius);
+        const f32 z = pad < 2 ? (pad == 0 ? radius : -radius) : candidate;
+        bool clear = true;
+        for (s32 box = 0; box < 25 && itemBoxes[box].pos[0] != END_OF_SPAWN_DATA; ++box) {
+            const f32 dx = x - itemBoxes[box].pos[0] * gTrackDirection;
+            const f32 dz = z - itemBoxes[box].pos[2];
+            if (dx * dx + dz * dz < 64.0f * 64.0f) { clear = false; break; }
+        }
+        for (s32 earlier = 0; clear && earlier < playerIndex; ++earlier) {
+            const f32 dx = x - gPlayers[earlier].pos[0];
+            const f32 dz = z - gPlayers[earlier].pos[2];
+            if (dx * dx + dz * dz < 60.0f * 60.0f) clear = false;
+        }
+        if (clear) return candidate;
+    }
+    return offset;
+}
+
 void spawn_and_set_player_spawns(void) {
     s16 sp5E;
     s16 sp5C;
@@ -980,16 +1011,25 @@ void spawn_and_set_player_spawns(void) {
         }
     }
 
+    init_extra_racer_vertices();
     if (LocalMP_IsActive()) {
         if (gModeSelection == BATTLE) {
-            // Pair extra players beside the original four arena spawn pads.
+            // Distribute up to four karts beside each original arena spawn pad.
             const f32 radius = IsBigDonut() ? 575.0f : IsSkyscraper() ? 400.0f : IsDoubleDeck() ? 160.0f : 200.0f;
             const f32 height = IsBigDonut() ? 200.0f : IsSkyscraper() ? 480.0f : IsDoubleDeck() ? 55.0f : 5.0f;
             const f32 facing[] = {32768.0f, 0.0f, -16384.0f, 16384.0f};
             const f32 donutFacing[] = {-16384.0f, 16384.0f, 0.0f, 32768.0f};
-            for (s32 i = 0; i < NUM_PLAYERS; ++i) {
+            const struct ActorSpawnData* donutItems = IsBigDonut() ?
+                (const struct ActorSpawnData*) LOAD_ASSET_RAW(d_course_big_donut_item_box_spawns) : NULL;
+            for (s32 i = 0; i < NUM_RACERS; ++i) {
                 const s32 pad = i & 3;
-                const f32 offset = pad + 4 < LocalMP_Count() ? (i < 4 ? -45.0f : 45.0f) : 0.0f;
+                const s32 padCount = i < LocalMP_Count() ? (LocalMP_Count() + 3 - pad) / 4 : 1;
+                // Double Deck's inner pads are closer together; keep the
+                // outer karts away from the neighboring pad's row.
+                const f32 spacing = IsDoubleDeck() ? 60.0f : 90.0f;
+                f32 offset = i < LocalMP_Count() ? ((i / 4) - (padCount - 1) * 0.5f) * spacing : 0.0f;
+                if (donutItems && i < LocalMP_Count())
+                    offset = big_donut_clear_spawn_offset(i, radius, offset, donutItems);
                 const f32 x = pad < 2 ? offset : (pad == 2 ? -radius : radius);
                 const f32 z = pad < 2 ? (pad == 0 ? radius : -radius) : offset;
                 D_80165270[i] = i;
@@ -1003,7 +1043,7 @@ void spawn_and_set_player_spawns(void) {
             func_80039AE4();
             return; // Arenas have no race paths to initialize.
         }
-        for (s32 i = 0; i < NUM_PLAYERS; i++) {
+        for (s32 i = 0; i < NUM_RACERS; i++) {
             s32 grid = i < LocalMP_RacerCount() ? gGPCurrentRaceRankByPlayerId[i] : i;
             if (grid < 0 || grid >= LocalMP_RacerCount()) grid = i;
             D_80165270[i] = grid;
@@ -1300,6 +1340,7 @@ void func_8003CD98(Player* player, Camera* camera, s8 playerId, s8 screenId) {
 }
 
 void spawn_players_and_cameras(void) {
+    for (s32 racer = NUM_PLAYERS; racer < NUM_RACERS; ++racer) gPlayers[racer].type = PLAYER_INACTIVE;
     UNUSED s32 pad;
     Player* player = &gPlayers[0];
     Camera* camera;
@@ -1337,7 +1378,7 @@ void spawn_players_and_cameras(void) {
         mode = 3;
     }
 
-    for (size_t i = 0; i < 8; i++) {
+    for (size_t i = 0; i < NUM_RACERS; i++) {
         D_80164A08[i] = 0;
         D_80164498[i] = 0;
     }
@@ -1447,6 +1488,10 @@ void spawn_multiplayer_cameras(u32 mode) {
         gScreenContexts[i].raceCamera = camera;
     }
 
+    // Expanded local racing already keeps the independent forward race view.
+    // Rear-view switching is disabled there; do not create/tick unused cameras
+    // with camera indexes outside the per-human physics arrays.
+    if (LocalMP_IsActive()) return;
     for (size_t i = 0; i < screens; i++) {
         Vec3f spawn = {gPlayers[i].pos[0], gPlayers[i].pos[1], gPlayers[i].pos[2]};
         camera = CM_AddLookBehindCamera(spawn, gPlayers[i].rotation[1], mode);
@@ -1479,7 +1524,7 @@ void load_kart_textures(void) {
             break;
     }
 
-    if (LocalMP_IsActive()) {
+    if (LocalMP_IsActive() || (gGamestate == ENDING && LocalMP_CeremonyRacerCount() > NUM_PLAYERS)) {
         for (s8 screen = 0; screen < LocalMP_Count(); screen++) {
             for (s8 racer = 0; racer < LocalMP_RacerCount(); racer++) {
                 func_8003CD98(&gPlayers[racer], gScreenContexts[screen].camera, racer, screen);

@@ -62,7 +62,7 @@ AText::AText(const SpawnParams& params) : AActor(params) {
     TextColour[3] = params.Colour4.value_or(RGBA8{255, 255, 255, 255});
 
     PlayerIndex = static_cast<uint32_t>(params.Behaviour.value_or(0));
-    if (PlayerIndex < 0 || PlayerIndex >= NUM_PLAYERS) {
+    if (PlayerIndex < 0 || PlayerIndex >= MAX_HUMAN_PLAYERS) {
         PlayerIndex = 0;
     }
 

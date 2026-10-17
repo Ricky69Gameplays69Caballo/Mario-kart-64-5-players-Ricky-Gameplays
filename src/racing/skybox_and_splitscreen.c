@@ -603,6 +603,14 @@ void race_begin_viewport_4p(ScreenContext* screen) {
 void render_screens(ScreenContext* screen, s32 mode, s32 someId, s32 playerId) {
     Camera* camera = screen->camera;
     s32 screenId = screen - gScreenContexts;
+    // A larger CPU grid still uses the native HUD for up to four humans.
+    // The expanded viewport loop shares its render mode, so select the HUD
+    // mode from the actual screen to draw each player's own item roulette.
+    s32 nativeHUD = !LocalMP_IsActive() ||
+        (LocalMP_Count() <= 4 && (LocalMP_Count() == 1 || MultiplayerOptions_DisplayCount() == 1) &&
+         !LocalMP_BattleResultsOpen() && !LocalMP_RaceResultsOpen());
+    s32 hudMode = LocalMP_IsActive() && LocalMP_Count() >= 3 && LocalMP_Count() <= 4
+                      ? RENDER_SCREEN_MODE_3P_4P_PLAYER_ONE + screenId : mode;
 
     if (NULL == camera) {
         printf("[skybox_and_splitscreen.c] Skipping rendering for screen %ld. This viewport has no camera\n",
@@ -625,7 +633,8 @@ void render_screens(ScreenContext* screen, s32 mode, s32 someId, s32 playerId) {
 
                 if ((CVarGetInteger("gDrawSky", true) == true)) {
                     CM_RaceDrawSky(screen, someId);
-                    if (!LocalMP_IsActive()) func_80093A30(someId); // Fill box for thunderbolt?
+                    if (LocalMP_IsActive()) func_8009E2A8(screenId);
+                    else func_80093A30(someId); // Lightning sky flash for this viewport.
                 }
             }
             break;
@@ -634,7 +643,8 @@ void render_screens(ScreenContext* screen, s32 mode, s32 someId, s32 playerId) {
 
             if ((CVarGetInteger("gDrawSky", true) == true)) {
                 CM_RaceDrawSky(screen, someId);
-                if (!LocalMP_IsActive()) func_80093A30(someId); // Fill box for thunderbolt?
+                if (LocalMP_IsActive()) func_8009E2A8(screenId);
+                else func_80093A30(someId); // Lightning sky flash for this viewport.
             }
             break;
     }
@@ -714,14 +724,14 @@ void render_screens(ScreenContext* screen, s32 mode, s32 someId, s32 playerId) {
     }
     if (screenId < 4) render_player_snow_effect(camera);
     func_80058BF4(); // Setup texture modes
-    if (D_800DC5B8 != 0 && !LocalMP_IsActive()) {
-        func_80058C20(mode); // Setup hud matrix
+    if (D_800DC5B8 != 0 && nativeHUD) {
+        func_80058C20(hudMode); // Setup hud matrix
     }
     if (!LocalMP_IsActive()) func_80093A5C(mode); // Perhaps pause render?
 
-    if (!LocalMP_IsActive() && CVarGetInteger("gDrawHUD", true) == true) {
+    if (nativeHUD && CVarGetInteger("gDrawHUD", true) == true) {
         if (D_800DC5B8 != 0) {
-            render_hud(mode);
+            render_hud(hudMode);
         }
     }
 

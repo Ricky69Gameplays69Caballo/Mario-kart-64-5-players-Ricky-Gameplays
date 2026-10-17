@@ -66,7 +66,7 @@ s8 unref_D_8018EE0C; // Set to 0 but never referenced
 /** Data **/
 s32 gMenuSelection = HARBOUR_MASTERS_MENU;
 s32 gFadeModeSelection = FADE_MODE_NONE;
-s8 gCharacterSelections[8] = { MARIO, LUIGI, YOSHI, TOAD, DK, WARIO, PEACH, BOWSER };
+s8 gCharacterSelections[NUM_RACERS] = { MARIO, LUIGI, YOSHI, TOAD, DK, WARIO, PEACH, BOWSER };
 
 // The current row selected in the mode column for each player indexed
 // 0-1 for 1P; 0-2 (Grand Prix, Versus, Battle) for 2P, 3P, and 4P.

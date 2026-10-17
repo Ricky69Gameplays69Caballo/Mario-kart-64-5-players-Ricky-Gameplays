@@ -59,7 +59,7 @@ u16 D_800DC5E4 = 0;
 //! @todo gPlayerWinningIndex (D_800DC5E8) accessed as word, D_800DC5EB as u8
 s32 gPlayerWinningIndex = 0;
 
-ALIGNED16 ScreenContext gScreenContexts[8] = { 0 };
+ALIGNED16 ScreenContext gScreenContexts[MAX_HUMAN_PLAYERS] = { 0 };
 ScreenContext* gScreenOneCtx = &gScreenContexts[0];
 ScreenContext* gScreenTwoCtx = &gScreenContexts[1];
 ScreenContext* gScreenThreeCtx = &gScreenContexts[2];
@@ -133,12 +133,12 @@ Vec3f D_8015F778;
 
 f32 gTrackDirection; // Extra mode, flips vertices.
 s32 gNumScreens;      // Set to zero in single player mode
-s32 D_8015F790[128];  // Sixteen entries for each of eight viewports.
+s32 D_8015F790[MAX_HUMAN_PLAYERS * 16];  // Sixteen entries for each of eight viewports.
 u16 D_8015F890;
 u16 D_8015F892;
 u16 D_8015F894;
 // Indexed by Player ID. Track time in seconds since player has last crossed the finish line
-f32 gTimePlayerLastTouchedFinishLine[NUM_PLAYERS];
+f32 gTimePlayerLastTouchedFinishLine[NUM_RACERS];
 
 u8* gNmiUnknown1;
 u8* gNmiUnknown2;
@@ -153,7 +153,7 @@ s32 D_8015F8DC;
 s32 D_8015F8E0;
 f32 gWaterLevel;
 f32 gWaterVelocity;
-s16 gPlayerPositionLUT[8]; // Player index at each position
+s16 gPlayerPositionLUT[NUM_RACERS]; // Player index at each position
 u16 gNumPermanentActors;
 //s32 code_800029B0_bss_pad2[44];
 
@@ -265,7 +265,7 @@ void setup_race(void) {
 
     controller = gControllerOne;
 
-    for (i = 0; i < NUM_PLAYERS; i++, controller++) {
+    for (i = 0; i < MAX_HUMAN_PLAYERS; i++, controller++) {
         controller->rawStickX = 0;
         controller->rawStickY = 0;
         controller->buttonPressed = 0;

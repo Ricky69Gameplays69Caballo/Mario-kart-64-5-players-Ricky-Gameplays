@@ -32,6 +32,13 @@ extern s8 gPlayerCount;
 
 size_t OBombKart::_count = 0;
 
+namespace {
+bool RaceBombKartsDisabled() {
+    return gGamestate == RACING && gModeSelection != BATTLE && LocalMP_Count() >= 3 &&
+           !CVarGetInteger(CVAR_MULTIPLAYER_RACE_BOMBS, 1);
+}
+}
+
 OBombKart::OBombKart(const SpawnParams& params) : OObject(params) {
     Name = "Bomb Kart";
     ResourceName = "mk:bomb_kart";
@@ -91,6 +98,7 @@ OBombKart::OBombKart(const SpawnParams& params) : OObject(params) {
 }
 
 void OBombKart::Tick() {
+    if (RaceBombKartsDisabled()) return; // Includes proximity hits and explosion triggers.
     f32 sp118;
     f32 var_f18;
     TrackPathPoint* temp_v0_2;
@@ -348,6 +356,7 @@ void OBombKart::Tick() {
 }
 
 void OBombKart::Draw(s32 cameraId) {
+    if (RaceBombKartsDisabled()) return;
     if (IsPodiumCeremony()) {
         if ((_idx == 0) && (WaypointIndex < 16)) {
             return;
@@ -502,6 +511,10 @@ void OBombKart::LoadMtx(s32 cameraId) {
 }
 
 void OBombKart::Waypoint(s32 screenId) {
+    if (RaceBombKartsDisabled()) {
+        playerHUD[screenId].unk_74 = 0;
+        return;
+    }
     s32 playerWaypoint;
     s32 bombWaypoint;
     s32 waypointDiff;
@@ -518,7 +531,7 @@ void OBombKart::Waypoint(s32 screenId) {
 }
 
 Player* OBombKart::FindTarget() {
-    for (size_t i = 0; i < NUM_PLAYERS; i++) {
+    for (size_t i = 0; i < LocalMP_RacerCount(); i++) {
         if (gPlayers[i].type & PLAYER_HUMAN) {
             if (is_within_distance_2d(Pos[0], Pos[2], gPlayers[i].pos[0], gPlayers[i].pos[2], 500)) {
                 return &gPlayers[i];

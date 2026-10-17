@@ -1,24 +1,26 @@
-# Mario Kart 64 5+ Players — Ricky Gameplays
+# Mario Kart 64 5+ Players — Ricky Gameplays v0.2.0 (Windows)
 
-## v0.1.2 — Grand Prix finale and ceremony update
+Unofficial fork of [HarbourMasters/SpaghettiKart](https://github.com/HarbourMasters/SpaghettiKart). Original port and engine by HarbourMasters and the SpaghettiKart contributors; fork customization by Ricky Gameplays.
 
-- Eight-player mode and Grand Prix bots default to enabled. Existing saved choices are preserved.
-- **Escape → Enhancements → Cheats → Skip to Grand Prix finale** opens the ceremony during a 3–8 player Grand Prix, using current cup standings without awarding saved trophies.
-- The expanded ceremony includes the remaining racers as spectators, supports repeated characters, and fixes their ground shadows.
-- Extra spectators stand beside the fourth racer in a row rotated 45 degrees left, keeping them away from the winner's opening path.
+## Changes since v0.1.2
 
-Unofficial fork of [HarbourMasters/SpaghettiKart](https://github.com/HarbourMasters/SpaghettiKart), with local Grand Prix, VS, and Battle for up to eight humans, updated game menus and HUD, shared minimaps, controller profiles, and racer visibility settings.
+- Local Grand Prix, VS and Battle for up to 16 human players, with expanded controller ports and profiles, menus, HUD and rankings.
+- Optional 16-racer race grids with bots filling unused slots; faster item-box respawns for 16-racer races and 16-player Battle.
+- One, two or three screen layouts. At 16 humans: 4x4 on one screen, 8 / 8 on two screens, or 6 / 5 / 5 on three screens. Windows must use an extended desktop.
+- One centered minimap or race-progress line per selected screen. Minimap size and transparency sliders also accept numeric values; transparency includes racer markers.
+- Player selection cycles left/right between 1P and 16P (1P and 8P when the 16-player option is disabled).
+- Native-style expanded results, custom position labels for places 9–16, visible item roulette, drift audio fixes, and an optional race bomb-kart toggle for 3+ players.
+- Fixes for crashes involving extra racers, controller reconnect handling, Battle pause text and crowded Big Donut spawn positions.
+- Windows crash logging and optional detailed diagnostic logging in the PC menu.
 
-## Downloads
+## Windows download and setup
 
-This release is for **Windows x64** (64-bit Windows on Intel or AMD).
+Download `Mario-Kart-64-5-Players-Ricky-Gameplays-v0.2.0-windows-x64.zip` from Assets. Extract the whole ZIP into a new folder, then run `Launch-Combined.cmd` or `Spaghettify.exe`. The launcher saves session logs locally. The `.sha256` file contains the ZIP checksum. GitHub's source archives are for developers, not playable builds.
 
-- `windows-x64.zip`: 64-bit Windows on Intel or AMD. Extract the entire folder, then open `Spaghettify.exe`.
+**No ROM, extracted Mario Kart 64 game archive (`mk64.o2r`), saves, or personal settings are included.** Supply your own supported US Mario Kart 64 dump when prompted on first launch. The included `spaghetti.o2r` contains port resources and custom artwork.
 
-The ZIP has a SHA-256 checksum file. Download the Windows ZIP from Assets below; the source archives are for developers and are not playable builds. macOS, Linux, ARM, and Android downloads are deferred.
+Open Escape → Multiplayer → Local play. Enable 16 players for 9–16P choices, and select the number of screens. Move left from 1P or right past 4P to access expanded player pages. Use C-right to switch map displays. The bots option is labeled **Enable bots in 3+ players**. Controller profiles are in the bindings window.
 
-**No ROM or extracted Mario Kart 64 game data is included.** Provide your own supported US Mario Kart 64 dump on first launch. The included `spaghetti.o2r` contains port resources and the custom multiplayer menu texture, not the extracted game archive `mk64.o2r`.
+For an existing installation, back up your saves and settings first, and use the matching executable and `spaghetti.o2r` from this ZIP together. Do not mix an old resource archive with this executable.
 
-Open the PC menu with Escape. **Multiplayer → Local play → Enable 8 players** and the Grand Prix bots option default to enabled. Move right past 4P in GAME SELECT for 5P–8P. Controller profiles are in the bindings window.
-
-Original port and engine: HarbourMasters and the SpaghettiKart contributors. Fork customization: Ricky Gameplays. See the repository README for details and credits.
+Windows x64 only. Other platforms remain deferred. Release compilation succeeded; the latest menu/map changes have not had a fresh gameplay pass. Extended multiplayer remains experimental.

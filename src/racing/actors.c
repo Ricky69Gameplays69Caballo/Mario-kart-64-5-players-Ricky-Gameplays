@@ -1,3 +1,4 @@
+#include "port/LocalMultiplayer.h"
 #include <libultraship.h>
 #include <libultra/gbi.h>
 #include <course_offsets.h>
@@ -2180,7 +2181,7 @@ void evaluate_collision_for_players_and_actors(void) {
     size_t j;
     Player* phi_s1;
 
-    for (i = 0; i < NUM_PLAYERS; i++) {
+    for (i = 0; i < LocalMP_RacerCount(); i++) {
         phi_s1 = &gPlayers[i];
 
         if (((phi_s1->type & 0x8000) != 0) && ((phi_s1->effects & 0x4000000) == 0)) {

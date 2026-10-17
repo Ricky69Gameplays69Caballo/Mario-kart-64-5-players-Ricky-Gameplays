@@ -62,7 +62,7 @@ struct SPTask* sCurrentDisplaySPTask = NULL;
 struct SPTask* sNextAudioSPTask = NULL;
 struct SPTask* sNextDisplaySPTask = NULL;
 
-struct Controller gControllers[NUM_PLAYERS];
+struct Controller gControllers[MAX_HUMAN_PLAYERS];
 struct Controller* gControllerOne = &gControllers[0];
 struct Controller* gControllerTwo = &gControllers[1];
 struct Controller* gControllerThree = &gControllers[2];
@@ -73,7 +73,7 @@ struct Controller* gControllerSix = &gControllers[5];
 struct Controller* gControllerSeven = &gControllers[6];
 struct Controller* gControllerEight = &gControllers[7];
 
-Player gPlayers[NUM_PLAYERS];
+Player gPlayers[NUM_RACERS];
 Player* gPlayerOne = &gPlayers[0];
 Player* gPlayerTwo = &gPlayers[1];
 Player* gPlayerThree = &gPlayers[2];
@@ -102,8 +102,8 @@ OSIoMesg gDmaIoMesg;
 OSMesgQueue gSIEventMesgQueue;
 OSMesg gSIEventMesgBuf[3];
 
-OSContStatus gControllerStatuses[8];
-OSContPad gControllerPads[8];
+OSContStatus gControllerStatuses[MAX_HUMAN_PLAYERS];
+OSContPad gControllerPads[MAX_HUMAN_PLAYERS];
 u8 gControllerBits;
 // Contains a 32x32 grid of indices into gCollisionIndices containing indices into gCollisionMesh
 CollisionGrid gCollisionGrid[1024];
@@ -398,7 +398,7 @@ void read_controllers(void) {
     // osRecvMesg(&gSIEventMesgQueue, &msg, OS_MESG_BLOCK);
     osContGetReadData(gControllerPads);
     memset(gControllerFive, 0, sizeof(*gControllerFive));
-    for (s32 i = 0; i < NUM_PLAYERS; i++) {
+    for (s32 i = 0; i < MAX_HUMAN_PLAYERS; i++) {
         update_controller(i);
         gControllerFive->button |= gControllers[i].button;
         gControllerFive->buttonPressed |= gControllers[i].buttonPressed;
@@ -714,7 +714,7 @@ void race_logic_loop(void) {
 
     func_802A4EF4();
 
-    if (gModeSelection == TIME_TRIALS) {
+    if (gModeSelection == TIME_TRIALS && !LocalMP_IsActive()) {
         replays_loop();
     }
 
@@ -736,11 +736,12 @@ void race_logic_loop(void) {
         select_framebuffer();
     }
 
-    if (LocalMP_IsActive()) {
+    if (LocalMP_IsActive()) LocalMP_Layout();
+    if (LocalMP_IsActive() && (LocalMP_Count() >= 3 || LocalMP_RaceResultsOpen())) {
         LocalMP_Layout();
-        const s32 battleResults = LocalMP_BattleResultsOpen();
-        const s32 firstScreen = battleResults ? gPlayerWinningIndex : 0;
-        const s32 lastScreen = battleResults ? firstScreen + 1 : LocalMP_Count();
+        const s32 ranking = LocalMP_BattleResultsOpen() || LocalMP_RaceResultsOpen();
+        const s32 firstScreen = ranking ? gPlayerWinningIndex : 0;
+        const s32 lastScreen = ranking ? firstScreen + 1 : LocalMP_Count();
         for (s32 screen = firstScreen; screen < lastScreen; screen++) {
             // Set the projection for this viewport, including the wider last
             // player in 5P, 7P and 8P. Sky and game cameras use this same ratio.
@@ -800,13 +801,15 @@ void race_logic_loop(void) {
     display_debug_info();
 
     func_802A4300();
-    if (!LocalMP_IsActive() || LocalMP_Count() <= 4) func_800591B4();
+    if ((!LocalMP_IsActive() || (LocalMP_Count() <= 4 &&
+        (LocalMP_Count() == 1 || MultiplayerOptions_DisplayCount() == 1))) && !LocalMP_RaceResultsOpen()) func_800591B4();
     if (!LocalMP_IsActive()) func_80093E20();
     else {
         LocalMP_DrawRacePositions();
         LocalMP_DrawItemWindows();
         LocalMP_DrawPauseMenu();
         LocalMP_DrawBattleResults();
+        LocalMP_DrawRaceResults();
     }
 #if DVDL
     display_dvdl();

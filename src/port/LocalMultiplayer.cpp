@@ -1,4 +1,5 @@
 #include "LocalMultiplayer.h"
+#include "MultiplayerDisplays.h"
 #include <libultraship.h>
 #include <imgui.h>
 #include <algorithm>
@@ -49,6 +50,9 @@ int pauseChoice = 0;
 MenuItem pauseCursor{};
 int battleResultChoice = 0;
 MenuItem battleResultCursor{};
+bool raceResultStandings = false;
+int raceResultChoice = 0;
+MenuItem raceResultCursor{};
 int battleSetupRequest = 0; // Deferred until the native main menu has initialized.
 bool resumeBattleSession = false;
 bool gameMenu = false;
@@ -61,8 +65,10 @@ int coursePreviewTrack = 0;
 int coursePreviewTimer = 0;
 int coursePreviewCup = -1;
 int participants = 8;
+// Keep the game-select cursor separate from the active race snapshot.
+int menuPlayerCount = 8;
 int racers = 8; // Race snapshot: humans have screens; bots occupy the remaining grid slots.
-int mode = 0; // 0: Grand Prix, 1: VS, 2: Battle.
+int mode = 0; // 0: Grand Prix, 1: VS, 2: Battle, 3: Time Trials with bots.
 int engineClass = 1;
 int selectedCup = 0;
 int selectedTrack = 0;
@@ -76,15 +82,15 @@ int ceremonyRacers = 4;
 bool finalLapMusicStarted = false;
 int ceremonyCharacter = 0;
 int ceremonyRank = 0;
-std::array<int, 8> characters = {0, 1, 2, 3, 4, 5, 6, 7};
-std::array<bool, 8> ready = {};
+std::array<int, NUM_RACERS> characters = {0, 1, 2, 3, 4, 5, 6, 7};
+std::array<bool, MAX_HUMAN_PLAYERS> ready = {};
 // Native portrait order differs from the racing character IDs.
 constexpr std::array<int, 8> characterGrid = {0, 1, 6, 3, 2, 4, 5, 7};
-std::array<bool, 8> finished = {};
-std::array<float, 8> finishTimes = {};
-std::array<int, 8> finishingPlace = {};
-std::array<bool, 8> estimatedTime = {};
-std::array<int, 8> points = {};
+std::array<bool, NUM_RACERS> finished = {};
+std::array<float, NUM_RACERS> finishTimes = {};
+std::array<int, NUM_RACERS> finishingPlace = {};
+std::array<bool, NUM_RACERS> estimatedTime = {};
+std::array<int, NUM_RACERS> points = {};
 bool progressDisplay = false; // C-right switches the one shared map/progress display.
 int sharedHUDPlayer = 0; // Highlight the player who last changed the shared display.
 const char* characterNames[] = {"Mario", "Luigi", "Yoshi", "Toad", "Donkey Kong", "Wario", "Peach", "Bowser"};
@@ -183,14 +189,14 @@ void StartTrack() {
     gCupSelection = selectedCup;
     gCourseIndexInCup = cup->CursorPosition;
     D_800DC540 = selectedCup;
-    gModeSelection = mode == 0 ? GRAND_PRIX : mode == 1 ? VERSUS : BATTLE;
+    gModeSelection = mode == 0 ? GRAND_PRIX : mode == 1 ? VERSUS : mode == 2 ? BATTLE : TIME_TRIALS;
     if (mode != 0) TrackBrowser_SetTrackFromCup();
     // A registry-created track can reuse the previous track's address. Force
     // setup_race to reload its data and recreate the world for every new race.
     gCurrentlyLoadedTrackAddr = 0;
     // Rendering can run before the first logic tick initializes the lap data.
     // Clear the previous race now so the HUD cannot request a missing Lakitu.
-    for (int i = 0; i < NUM_PLAYERS; i++) gLapCountByPlayerId[i] = -1;
+    for (int i = 0; i < NUM_RACERS; i++) gLapCountByPlayerId[i] = -1;
     gCCSelection = mode == 2 ? CC_100 : engineClass;
     set_mirror_mode(mode != 2 && engineClass == CC_EXTRA);
     gPlaceItemBoxes = 1;
@@ -200,11 +206,12 @@ void StartTrack() {
     gEnableDebugMode = false;
     // The old menu/HUD tables have four entries. This lobby owns the actual
     // human count, rendering, scoring and finish flow independently of them.
-    gPlayerCount = participants == 3 ? 3 : 4;
+    gPlayerCount = std::min(participants, 4);
     gPlayerCountSelection1 = gPlayerCount;
-    gScreenModeSelection = SCREEN_MODE_3P_4P_SPLITSCREEN;
-    gActiveScreenMode = SCREEN_MODE_3P_4P_SPLITSCREEN;
-    for (int i = 0; i < 8; i++) gCharacterSelections[i] = characters[i];
+    gScreenModeSelection = participants == 1 ? SCREEN_MODE_1P : participants == 2 ?
+        SCREEN_MODE_2P_SPLITSCREEN_HORIZONTAL : SCREEN_MODE_3P_4P_SPLITSCREEN;
+    gActiveScreenMode = gScreenModeSelection;
+    for (int i = 0; i < racers; i++) gCharacterSelections[i] = characters[i];
     gIsGamePaused = 0;
     gPauseTriggered = 0;
     gIsInQuitToMenuTransition = 0;
@@ -225,8 +232,8 @@ void StartTrack() {
     gGamestateNext = RACING;
 }
 
-std::array<int, 8> OrderByFinish() {
-    std::array<int, 8> order;
+std::array<int, NUM_RACERS> OrderByFinish() {
+    std::array<int, NUM_RACERS> order;
     std::iota(order.begin(), order.end(), 0);
     std::stable_sort(order.begin(), order.begin() + racers, [](int a, int b) {
         if (mode == 2) return finishingPlace[a] < finishingPlace[b];
@@ -241,8 +248,8 @@ bool CupComplete() {
     return mode == 0 && raceInCup + 1 >= GetWorld()->Cups[selectedCup]->GetSize();
 }
 
-std::array<int, 8> OrderByPoints() {
-    std::array<int, 8> order;
+std::array<int, NUM_RACERS> OrderByPoints() {
+    std::array<int, NUM_RACERS> order;
     std::iota(order.begin(), order.end(), 0);
     // Match the native human-first tie break, using slots rather than characters.
     // Equal-scoring human players keep the lower controller number first.
@@ -253,7 +260,7 @@ std::array<int, 8> OrderByPoints() {
     return order;
 }
 
-int BestHumanRank(const std::array<int, 8>& order) {
+int BestHumanRank(const std::array<int, NUM_RACERS>& order) {
     for (int rank = 0; rank < racers; ++rank) {
         if (order[rank] < participants) return rank;
     }
@@ -265,7 +272,7 @@ void OpenCeremony() {
     ceremonyRank = BestHumanRank(standings);
     ceremonyCharacter = characters[standings[ceremonyRank]];
     ceremonyPending = true;
-    for (int rank = 0; rank < NUM_PLAYERS; ++rank) {
+    for (int rank = 0; rank < NUM_RACERS; ++rank) {
         gCharacterIdByGPOverallRank[rank] = rank < racers ? characters[standings[rank]] : 0;
     }
     // Native ceremony spawns its own podium slots. Its camera/HUD tables expect 1P.
@@ -286,9 +293,19 @@ float ItemWindowScale() {
     constexpr float fourPlayerItemScale = 1.5f;
     if (participants <= 4) return fourPlayerItemScale;
     constexpr float fivePlayerItemScale = fourPlayerItemScale * .9f * .5f;
-    return fivePlayerItemScale * (1.f - .1f * (participants - 5));
+    return fivePlayerItemScale * (1.f - .1f * (std::min(participants, 8) - 5));
 }
 
+}
+
+extern "C" int MultiplayerOptions_SixteenEnabled(void) {
+    return CVarGetInteger(CVAR_MULTIPLAYER_SIXTEEN, 0) != 0;
+}
+extern "C" int MultiplayerOptions_DisplayCount(void) {
+    return std::clamp(CVarGetInteger(CVAR_MULTIPLAYER_SCREENS, 1), 1, 3);
+}
+extern "C" void MultiplayerOptions_OnSixteenChanged(void) {
+    if (MultiplayerOptions_CanChange()) request = 5;
 }
 
 extern "C" int MultiplayerOptions_EightEnabled(void) {
@@ -349,39 +366,67 @@ extern "C" int LocalMP_GameMenuTick(void) {
         return 1;
     }
     if (!gameMenu) {
-        if (gMainMenuSelection != MAIN_MENU_PLAYER_SELECT || gPlayerCount != 4 ||
-            is_screen_being_faded() || !(buttons & R_JPAD)) return 0;
-        // The original menu uses four-entry tables. Keep its count at 4 and
+        const bool nextPage = gPlayerCount == 4 && (buttons & R_JPAD);
+        const bool previousPage = gPlayerCount == 1 && (buttons & L_JPAD);
+        if (gMainMenuSelection != MAIN_MENU_PLAYER_SELECT ||
+            is_screen_being_faded() || (!nextPage && !previousPage)) return 0;
+        // The original menu uses four-entry tables. Keep its count in range and
         // let this native page own the extra choices and setup sequence.
-        participants = 5;
+        participants = menuPlayerCount = previousPage ?
+            (MultiplayerOptions_SixteenEnabled() ? NUM_RACERS : NUM_PLAYERS) : 5;
         resumeBattleSession = false;
         mode = 0;
         gameMenu = true;
         gameMenuStep = GameMenuStep::Players;
-        characters = characterGrid;
+        for (int player = 0; player < MAX_HUMAN_PLAYERS; ++player) characters[player] = characterGrid[player % 8];
         ready.fill(false);
         play_sound2(SOUND_MENU_CURSOR_MOVE);
         return 1;
     }
     if (is_screen_being_faded()) return 1;
+    if (!MultiplayerOptions_SixteenEnabled() && menuPlayerCount > NUM_PLAYERS)
+        menuPlayerCount = participants = std::min(participants, 8);
     auto selectSound = [] { reset_cycle_flash_menu(); play_sound2(SOUND_MENU_SELECT); };
     auto moveSound = [] { reset_cycle_flash_menu(); play_sound2(SOUND_MENU_CURSOR_MOVE); };
     const bool confirm = buttons & (A_BUTTON | START_BUTTON);
     switch (gameMenuStep) {
         case GameMenuStep::Players:
             resumeBattleSession = false;
-            if ((buttons & B_BUTTON) || ((buttons & L_JPAD) && participants == 5)) {
+            if ((buttons & B_BUTTON) && menuPlayerCount > NUM_PLAYERS) {
+                menuPlayerCount = menuPlayerCount > 12 ? 12 : 8;
+                participants = menuPlayerCount;
+                play_sound2(SOUND_MENU_GO_BACK);
+            } else if ((buttons & B_BUTTON) || ((buttons & L_JPAD) && menuPlayerCount == 5)) {
                 gameMenu = false;
                 gPlayerCount = gPlayerCountSelection1 = 4;
                 gScreenModeSelection = SCREEN_MODE_3P_4P_SPLITSCREEN;
                 play_sound2(SOUND_MENU_GO_BACK);
-            } else if ((buttons & R_JPAD) && participants < 8) { ++participants; moveSound(); }
-            else if ((buttons & L_JPAD) && participants > 5) { --participants; moveSound(); }
-            else if (confirm) { gameMenuStep = GameMenuStep::Mode; selectSound(); }
+            } else if (buttons & R_JPAD) {
+                const int maxPlayers = MultiplayerOptions_SixteenEnabled() ? NUM_RACERS : NUM_PLAYERS;
+                if (menuPlayerCount == maxPlayers) {
+                    gameMenu = false;
+                    gPlayerCount = gPlayerCountSelection1 = 1;
+                    gScreenModeSelection = SCREEN_MODE_1P;
+                } else {
+                    participants = ++menuPlayerCount;
+                }
+                moveSound();
+            } else if ((buttons & L_JPAD) && menuPlayerCount > 5) {
+                --menuPlayerCount;
+                participants = menuPlayerCount;
+                moveSound();
+            } else if (confirm) {
+                {
+                    participants = menuPlayerCount;
+                    gameMenuStep = GameMenuStep::Mode;
+                    selectSound();
+                }
+            }
             break;
         case GameMenuStep::Mode:
             resumeBattleSession = false;
             if (buttons & B_BUTTON) {
+                menuPlayerCount = participants;
                 gameMenuStep = GameMenuStep::Players;
                 play_sound2(SOUND_MENU_GO_BACK);
             }
@@ -532,12 +577,13 @@ extern "C" void LocalMP_DrawGameMenu(void) {
         const bool choosingPlayers = gameMenuStep == GameMenuStep::Players;
         const bool choosingClass = gameMenuStep == GameMenuStep::Class;
         const bool confirming = gameMenuStep == GameMenuStep::Confirm;
+        const int pageStart = 5 + ((menuPlayerCount - 5) / 4) * 4;
         // Once the player count is selected, the native menu keeps just that
         // column and opens the class list beside the selected game mode.
         for (int slot = 0; slot < (choosingPlayers ? 4 : 1); slot++) {
             const int x = choosingPlayers ? 21 + slot * 71 : 104;
-            const int humanCount = choosingPlayers ? slot + 5 : participants;
-            const bool chosen = participants == humanCount;
+            const int humanCount = choosingPlayers ? slot + pageStart : participants;
+            const bool chosen = (choosingPlayers ? menuPlayerCount : participants) == humanCount;
             draw_expanded_menu_card_base(x, 62, chosen, !choosingPlayers);
             draw_expanded_player_card(x, 62);
             std::snprintf(title, sizeof(title), "%dP", humanCount);
@@ -557,14 +603,15 @@ extern "C" void LocalMP_DrawGameMenu(void) {
         if (confirming) {
             draw_expanded_menu_button(240, 200, 7, true, false);
         } else if (!choosingClass) {
-            const int bots = mode == 0 && participants < 8 && MultiplayerOptions_BotsEnabled() ? 8 - participants : 0;
+            const int bots = mode != 2 && MultiplayerOptions_SixteenEnabled() ? NUM_RACERS - participants :
+                             mode == 0 && participants < 8 && MultiplayerOptions_BotsEnabled() ? 8 - participants : 0;
             std::snprintf(title, sizeof(title), "%d PLAYERS + %d BOTS", participants, bots);
             NativeText(160, 201, mode == 2 ? "BATTLE - THREE BALLOONS EACH" : title, TEXT_YELLOW, .42f);
             NativeText(160, 212, gameMenuStep == GameMenuStep::Players ? "LEFT / RIGHT: PLAYERS" : "UP / DOWN: GAME MODE", TEXT_BLUE, .35f);
         }
     } else if (gameMenuStep == GameMenuStep::Characters) {
-        std::array<s32, 8> roster{};
-        std::array<u8, 8> confirmed{};
+        std::array<s32, MAX_HUMAN_PLAYERS> roster{};
+        std::array<u8, MAX_HUMAN_PLAYERS> confirmed{};
         for (int player = 0; player < participants; ++player) {
             roster[player] = characters[player];
             confirmed[player] = ready[player];
@@ -578,20 +625,29 @@ extern "C" void LocalMP_DrawGameMenu(void) {
         ClampCourseSelection();
         draw_expanded_course_select(selectedCup, coursePreviewTrack, mode, courseField, engineClass);
     }
-    if (gameMenuStep != GameMenuStep::Characters) NativeText(160, 234, gameMenuStep == GameMenuStep::Class ?
-               "UP / DOWN: CLASS   A: SELECT   B: BACK" : "A: SELECT   B: BACK", TEXT_YELLOW, .33f);
+    if (gameMenuStep != GameMenuStep::Characters) NativeText(160, 234,
+        gameMenuStep == GameMenuStep::Class ?
+            "UP / DOWN: CLASS   A: SELECT   B: BACK" : "A: SELECT   B: BACK", TEXT_YELLOW, .33f);
 }
 
 extern "C" void LocalMP_DrawGameMenuHint(void) {
     if (!MultiplayerOptions_EightEnabled() || !MultiplayerOptions_CanChange() ||
         gMenuSelection != MAIN_MENU || gameMenu || lobby) return;
-    NativeText(160, 233, "RIGHT PAST 4P: 5P 6P 7P 8P", TEXT_YELLOW, .33f);
+    NativeText(160, 233, MultiplayerOptions_SixteenEnabled() ?
+        "LEFT / RIGHT: CYCLE 1P - 16P" : "LEFT / RIGHT: CYCLE 1P - 8P", TEXT_YELLOW, .33f);
 }
 extern "C" int LocalMP_Count(void) { return LocalMP_IsActive() ? participants : gPlayerCount; }
+extern "C" int LocalMP_RaceResultsOpen(void) {
+    return LocalMP_IsActive() && results && mode != 2;
+}
 extern "C" int LocalMP_BattleResultsOpen(void) {
     return LocalMP_IsActive() && results && mode == 2 && participants > 4;
 }
-extern "C" int LocalMP_RacerCount(void) { return LocalMP_IsActive() ? racers : gPlayerCount; }
+extern "C" int LocalMP_RacerCount(void) {
+    if (LocalMP_IsActive()) return racers;
+    if (gGamestate == ENDING) return LocalMP_CeremonyRacerCount();
+    return gModeSelection == GRAND_PRIX || gModeSelection == TIME_TRIALS ? NUM_PLAYERS : gPlayerCount;
+}
 extern "C" int LocalMP_IsFinished(int player) {
     // Battle players keep their native eliminated-player bomb physics and camera.
     return player < 0 || player >= racers || results || (mode != 2 && finished[player]);
@@ -601,7 +657,7 @@ extern "C" int LocalMP_CeremonyResult(int* character, int* rank) {
     // leave extra spectators in a later normal ceremony.
     ceremonyRacers = 4;
     if (!ceremonyPending || gGamestate != ENDING) return false;
-    ceremonyRacers = std::clamp(racers, 4, NUM_PLAYERS);
+    ceremonyRacers = std::clamp(racers, 4, NUM_RACERS);
     *character = ceremonyCharacter;
     *rank = ceremonyRank;
     ceremonyPending = false;
@@ -616,7 +672,7 @@ extern "C" int LocalMP_CanSkipGrandPrixFinale(void) {
     const int humans = LocalMP_Count();
     return gGamestate == RACING && gGamestateNext == RACING &&
            gModeSelection == GRAND_PRIX && !gDemoMode && !gIsInQuitToMenuTransition &&
-           humans >= 3 && humans <= 8 && !GetWorld()->Cups.empty();
+           humans >= 3 && humans <= MAX_HUMAN_PLAYERS && !GetWorld()->Cups.empty();
 }
 
 extern "C" void LocalMP_SkipGrandPrixFinale(void) {
@@ -679,16 +735,18 @@ extern "C" void LocalMP_ProcessRequest(void) {
         gGamestateNext = MAIN_MENU_FROM_QUIT;
         return;
     }
-    if (!MultiplayerOptions_EightEnabled()) return;
+    if (action == 1 && !MultiplayerOptions_EightEnabled()) return;
     if (paused) SetPaused(false);
     if (action == 1) {
         ceremonyPending = false;
         progressDisplay = false;
         sharedHUDPlayer = 0;
-        // Freeze the roster for this cup. With both options on, GP fills to eight
-        // for 3-7 humans; VS and two-player lobby races remain human-only.
-        racers = mode == 0 && participants >= 3 && participants <= 7 &&
+        // Freeze the race grid for this session. The 16-racer option takes
+        // priority over the smaller Grand Prix bot grid, except in Battle.
+        racers = mode != 2 && MultiplayerOptions_SixteenEnabled() ? NUM_RACERS :
+                 mode == 0 && participants >= 3 && participants <= 7 &&
                  MultiplayerOptions_BotsEnabled() ? NUM_PLAYERS : participants;
+        for (int bot = participants; bot < racers; ++bot) characters[bot] = bot % NUM_PLAYERS;
         points.fill(0);
         raceInCup = 0;
         for (int i = 0; i < racers; i++) gGPCurrentRaceRankByPlayerId[i] = racers - i - 1;
@@ -699,14 +757,18 @@ extern "C" void LocalMP_ProcessRequest(void) {
 }
 
 extern "C" void LocalMP_ResetRace(void) {
-    if (!active && gGamestate == RACING && !gDemoMode && gModeSelection == GRAND_PRIX &&
-        (gPlayerCount == 3 || gPlayerCount == 4) && MultiplayerOptions_EightEnabled() &&
-        !MultiplayerOptions_BotsEnabled()) {
-        // The normal menus can now launch GP with only the 8-player option on.
-        // Use the existing per-player cup/results flow to run without CPU slots.
-        participants = racers = gPlayerCount;
-        for (int player = 0; player < NUM_PLAYERS; ++player) characters[player] = gCharacterSelections[player];
-        mode = 0;
+    const bool sixteenRace = gModeSelection != BATTLE && MultiplayerOptions_SixteenEnabled();
+    if (!active && gGamestate == RACING && !gDemoMode && (sixteenRace ||
+        (gModeSelection == GRAND_PRIX && (gPlayerCount == 3 || gPlayerCount == 4) &&
+         MultiplayerOptions_EightEnabled() && !MultiplayerOptions_BotsEnabled()))) {
+        // Adopt the native menu's human roster before spawning the larger grid.
+        participants = gPlayerCount;
+        racers = sixteenRace ? NUM_RACERS : participants;
+        for (int player = 0; player < racers; ++player) {
+            characters[player] = player < participants ? gCharacterSelections[player] : player % NUM_PLAYERS;
+            gCharacterSelections[player] = characters[player];
+        }
+        mode = gModeSelection == GRAND_PRIX ? 0 : gModeSelection == VERSUS ? 1 : 3;
         engineClass = gCCSelection;
         selectedCup = static_cast<int>(GetWorld()->GetCupIndex());
         selectedTrack = raceInCup = static_cast<int>(GetWorld()->GetCurrentCup()->CursorPosition);
@@ -714,10 +776,15 @@ extern "C" void LocalMP_ResetRace(void) {
         ready.fill(true);
         for (int player = 0; player < racers; ++player) gGPCurrentRaceRankByPlayerId[player] = racers - player - 1;
         active = startedFromGameMenu = true;
+        gTourComplete = true;
+        ceremonyPending = progressDisplay = false;
+        sharedHUDPlayer = 0;
         gameMenu = lobby = false;
         request = 0;
     }
     if (!LocalMP_IsActive()) return;
+    std::fill_n(D_8018E838, MAX_HUMAN_PLAYERS, 0);
+    std::fill_n(D_8018E840, MAX_HUMAN_PLAYERS, 0);
     finished.fill(false);
     finishTimes.fill(std::numeric_limits<float>::infinity());
     finishingPlace.fill(-1);
@@ -731,51 +798,63 @@ extern "C" void LocalMP_ResetRace(void) {
     battleResultCursor.subState = 1;
     results = paused = false;
     gIsGamePaused = 0;
+    raceResultStandings = false;
+    raceResultChoice = 0;
+    raceResultCursor = {};
+    raceResultCursor.paramf = 1.5f;
+    raceResultCursor.subState = 1;
     LocalMP_Layout();
 }
 
 extern "C" void LocalMP_Layout(void) {
     if (!LocalMP_IsActive()) return;
-    const int columns = participants <= 4 ? 2 : 3;
-    const int rows = (participants + columns - 1) / columns;
-    // Round shared edges to the nearest even coordinate before deriving sizes.
-    // Rounding each width down independently left holes in the three-column grid.
-    // Even edges also preserve exact integer centers in viewport/scissor setup.
+    const int displays = std::min(MultiplayerOptions_DisplayCount(), participants);
     const auto edge = [](int index, int extent, int divisions) {
         return ((index * extent + divisions) / (2 * divisions)) * 2;
     };
-    std::array<int, 4> xEdges{}, yEdges{};
-    for (int column = 0; column <= columns; ++column) xEdges[column] = edge(column, SCREEN_WIDTH, columns);
-    for (int row = 0; row <= rows; ++row) yEdges[row] = edge(row, SCREEN_HEIGHT, rows);
-    const bool hasWideSlot = participants == 5 || participants == 7 || participants == 8;
-    const int preferredPlayer = CVarGetInteger("gMultiplayer.WidePlayer", 0) - 1;
-    const int widePlayer = preferredPlayer >= 0 && preferredPlayer < participants ?
-                           preferredPlayer : participants - 1;
-    for (int i = 0; i < participants; i++) {
-        auto& screen = gScreenContexts[i];
-        // Swap the preferred player's cell with the bottom-row wide cell.
-        // Context indices still belong to the same player/controller/HUD.
-        int slot = i;
-        if (hasWideSlot) {
-            if (i == widePlayer) slot = participants - 1;
-            else if (i == participants - 1) slot = widePlayer;
+    int firstPlayer = 0;
+    for (int display = 0; display < displays; ++display) {
+        const int count = participants / displays + (display < participants % displays);
+        int panelLeft, panelTop, panelRight, panelBottom;
+        MultiplayerDisplays_Panel(display, displays, &panelLeft, &panelTop, &panelRight, &panelBottom);
+        const int width = panelRight - panelLeft, height = panelBottom - panelTop;
+        int columns;
+        if (displays == 1 && participants <= 8) {
+            columns = participants == 1 ? 1 : participants == 2 ?
+                (gActiveScreenMode == SCREEN_MODE_2P_SPLITSCREEN_VERTICAL ? 2 : 1) :
+                participants <= 4 ? 2 : (participants + 1) / 2;
+        } else if (displays > 1) columns = (count + 1) / 2;
+        else columns = static_cast<int>(std::ceil(std::sqrt(static_cast<float>(count))));
+        const int rows = (count + columns - 1) / columns;
+        const bool hasWideSlot = displays == 1 && (participants == 5 || participants == 7);
+        const int preferredPlayer = CVarGetInteger("gMultiplayer.WidePlayer", 0) - 1;
+        const int widePlayer = preferredPlayer >= 0 && preferredPlayer < participants ? preferredPlayer : participants - 1;
+        for (int cell = 0; cell < count; ++cell) {
+            const int player = firstPlayer + cell;
+            auto& screen = gScreenContexts[player];
+            int slot = cell;
+            if (hasWideSlot) {
+                if (player == widePlayer) slot = participants - 1;
+                else if (player == participants - 1) slot = widePlayer;
+            }
+            const int left = panelLeft + edge(slot % columns, width, columns);
+            const int right = hasWideSlot && slot == count - 1 ? panelRight :
+                panelLeft + edge(slot % columns + 1, width, columns);
+            const int top = panelTop + edge(slot / columns, height, rows);
+            const int bottom = panelTop + edge(slot / columns + 1, height, rows);
+            screen.screenWidth = right - left;
+            screen.screenHeight = bottom - top;
+            screen.screenStartX = left + screen.screenWidth / 2;
+            screen.screenStartY = top + screen.screenHeight / 2;
+            screen.player = &gPlayers[player];
+            screen.controllers = &gControllers[player];
+            screen.unkC = &D_8015F790[player * 16];
+            screen.pathCounter = 1;
         }
-        const int left = xEdges[slot % columns];
-        const int right = hasWideSlot && slot == participants - 1 ? SCREEN_WIDTH :
-                          xEdges[slot % columns + 1];
-        const int top = yEdges[slot / columns];
-        const int bottom = yEdges[slot / columns + 1];
-        screen.screenWidth = right - left;
-        screen.screenHeight = bottom - top;
-        screen.screenStartX = left + screen.screenWidth / 2;
-        screen.screenStartY = top + screen.screenHeight / 2;
-        screen.player = &gPlayers[i];
-        screen.controllers = &gControllers[i];
-        screen.unkC = &D_8015F790[i * 16];
-        screen.pathCounter = 1;
+        firstPlayer += count;
     }
     gScreenAspect = static_cast<float>(gScreenContexts[0].screenWidth) / gScreenContexts[0].screenHeight;
-    if (LocalMP_BattleResultsOpen()) {
+    if (LocalMP_BattleResultsOpen() || LocalMP_RaceResultsOpen()) {
         auto& screen = gScreenContexts[battleWinner >= 0 ? battleWinner : 0];
         screen.screenWidth = SCREEN_WIDTH;
         screen.screenHeight = SCREEN_HEIGHT;
@@ -823,13 +902,42 @@ extern "C" void LocalMP_OnInput(void) {
         }
         return;
     }
+    if (LocalMP_RaceResultsOpen()) {
+        u16 input = 0;
+        for (int player = 0; player < participants && !input; ++player)
+            input = gControllers[player].buttonPressed | gControllers[player].stickPressed;
+        const int previous = raceResultChoice;
+        if (input & U_JPAD) raceResultChoice = 0;
+        else if (input & D_JPAD) raceResultChoice = 1;
+        if (previous != raceResultChoice) {
+            raceResultCursor.subState = raceResultChoice > previous ? 1 : -1;
+            raceResultCursor.paramf = 5.5f;
+            play_sound2(SOUND_MENU_CURSOR_MOVE);
+        }
+        if (mode == 0 && (input & (L_JPAD | R_JPAD | L_CBUTTONS | R_CBUTTONS))) {
+            raceResultStandings = !raceResultStandings;
+            play_sound2(SOUND_MENU_CURSOR_MOVE);
+        } else if (input & B_BUTTON) {
+            if (mode == 0 && raceResultStandings) {
+                raceResultStandings = false;
+                play_sound2(SOUND_MENU_GO_BACK);
+            } else {
+                raceResultChoice = 1;
+                play_sound2(SOUND_MENU_GO_BACK);
+            }
+        } else if (input & (A_BUTTON | START_BUTTON)) {
+            if (raceResultChoice == 1) request = 4;
+            else if (mode == 0 && !raceResultStandings) raceResultStandings = true;
+            else request = mode == 0 ? (CupComplete() ? 6 : 2) : 3;
+            play_sound2(SOUND_MENU_OK_CLICKED);
+        }
+        return;
+    }
     if (startedFromGameMenu && results) {
+        // Retain native-menu continuation for the existing 2-4 player Battle fallback.
         const u16 input = gControllers[0].buttonPressed;
         if (input & B_BUTTON) request = 4;
-        else if (input & (A_BUTTON | START_BUTTON)) {
-            const bool moreRaces = mode == 0 && raceInCup + 1 < GetWorld()->Cups[selectedCup]->GetSize();
-            request = moreRaces ? 2 : mode != 0 ? 3 : 6;
-        }
+        else if (input & (A_BUTTON | START_BUTTON)) request = 3;
         return;
     }
     if (paused && !results) {
@@ -863,7 +971,7 @@ extern "C" void LocalMP_OnInput(void) {
         }
     }
     bool changedDisplay = false;
-    if (participants > 4) {
+    if (participants > 1 && (participants > 4 || racers > NUM_PLAYERS)) {
         for (int player = 0; player < participants; ++player) {
             if (gControllers[player].buttonPressed & R_CBUTTONS) {
                 progressDisplay = !progressDisplay;
@@ -877,14 +985,18 @@ extern "C" void LocalMP_OnInput(void) {
 }
 
 extern "C" void LocalMP_DrawItemWindows(void) {
-    if (!LocalMP_IsActive() || participants <= 4 || paused || results || gHUDDisable) return;
+    // One human keeps the native corner map and perimeter progress HUD,
+    // regardless of how many CPU racers fill the grid.
+    if (!LocalMP_IsActive() || participants == 1 ||
+        (participants <= 4 && racers <= NUM_PLAYERS && MultiplayerOptions_DisplayCount() == 1) ||
+        paused || results || gHUDDisable) return;
     init_rdp();
     gSPViewport(gDisplayListHead++, VIRTUAL_TO_PHYSICAL(D_802B8880));
     AddEffectMatrixOrtho();
     gSPDisplayList(gDisplayListHead++, (Gfx*) D_02007F18);
-    const float scale = ItemWindowScale();
+    const float baseItemScale = ItemWindowScale();
     const auto order = OrderByFinish();
-    for (int player = 0; player < participants; ++player) {
+    for (int player = 0; (participants > 4 || MultiplayerOptions_DisplayCount() > 1) && player < participants; ++player) {
         const auto& screen = gScreenContexts[player];
         const int left = screen.screenStartX - screen.screenWidth / 2;
         const int top = screen.screenStartY - screen.screenHeight / 2;
@@ -892,6 +1004,8 @@ extern "C" void LocalMP_DrawItemWindows(void) {
         const int bottom = top + screen.screenHeight;
         gDPSetScissor(gDisplayListHead++, G_SC_NON_INTERLACE, left, top, right, bottom);
         if (finished[player]) continue;
+        const float scale = baseItemScale * std::min(1.f,
+            screen.screenWidth * GameEngine_GetAspectRatio() / (80.f * (4.f / 3.f)));
         // Native item-window slides have opposite signs on left/right players.
         // Normalize their progress so every expanded view enters from its own edge.
         const float progress = std::clamp(std::abs(playerHUD[player].slideItemBoxX) / 128.f, 0.f, 1.f);
@@ -902,50 +1016,36 @@ extern "C" void LocalMP_DrawItemWindows(void) {
     }
     gDPSetScissor(gDisplayListHead++, G_SC_NON_INTERLACE, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
     if (gRaceState > RACE_STAGING && gIsHUDVisible && (!progressDisplay || mode != 2)) {
-        // Keep the shared position line on the first horizontal divider.
-        // The course outline instead belongs inside the widest player view.
-        const int rows = (participants + 2) / 3;
-        const int centerY = ((SCREEN_HEIGHT + rows) / (2 * rows)) * 2;
-        const int viewer = std::clamp(sharedHUDPlayer, 0, participants - 1);
-        const int mapWidth = 76;
-        const int mapHeight = 44;
-        const float uiLeft = OTRGetDimensionFromLeftEdge(0);
-        const float uiWidth = OTRGetDimensionFromRightEdge(SCREEN_WIDTH) - uiLeft;
-        if (!progressDisplay) {
-            const int preferred = CVarGetInteger("gMultiplayer.WidePlayer", 0) - 1;
-            int mapPlayer = preferred >= 0 && preferred < participants ? preferred : participants - 1;
-            for (int player = 0; player < participants; ++player) {
-                const auto& candidate = gScreenContexts[player];
-                const auto& current = gScreenContexts[mapPlayer];
-                if (candidate.screenWidth * current.screenHeight > current.screenWidth * candidate.screenHeight)
-                    mapPlayer = player;
-            }
-            const auto& screen = gScreenContexts[mapPlayer];
-            const int left = screen.screenStartX - screen.screenWidth / 2;
-            const int top = screen.screenStartY - screen.screenHeight / 2;
-            const int right = left + screen.screenWidth;
-            const int bottom = top + screen.screenHeight;
-            const int halfMapWidth = static_cast<int>(mapWidth * SCREEN_WIDTH / uiWidth / 2.f) + 3;
-            // Left quarter leaves the kart visible in the center. In the
-            // 5P/8P layout this retains the old X and lowers it to kart height.
-            const int mapX = std::clamp(left + screen.screenWidth / 4,
-                                       left + halfMapWidth, right - halfMapWidth);
-            const int mapY = std::clamp(top + screen.screenHeight * 65 / 100,
-                                       top + mapHeight / 2 + 3, bottom - mapHeight / 2 - 3);
+        // Match the viewport groups so each physical screen gets its own map.
+        // Separate viewers also keep vertex storage and interpolation IDs unique.
+        const int displays = std::min(MultiplayerOptions_DisplayCount(), participants);
+        int firstPlayer = 0;
+        for (int display = 0; display < displays; ++display) {
+            const int count = participants / displays + (display < participants % displays);
+            int left, top, right, bottom;
+            MultiplayerDisplays_Panel(display, displays, &left, &top, &right, &bottom);
+            const int centerX = (left + right) / 2;
+            const int centerY = (top + bottom) / 2;
+            const int viewer = sharedHUDPlayer >= firstPlayer && sharedHUDPlayer < firstPlayer + count ?
+                               sharedHUDPlayer : firstPlayer;
             gDPSetScissor(gDisplayListHead++, G_SC_NON_INTERLACE, left, top, right, bottom);
-            draw_expanded_minimap(viewer, racers, order.data(), mapX, mapY, mapWidth, mapHeight);
-            gDPSetScissor(gDisplayListHead++, G_SC_NON_INTERLACE, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-        } else {
-            const int logicalWidth = static_cast<int>(124.f * SCREEN_WIDTH / uiWidth);
-            draw_expanded_race_progress(viewer, racers, order.data(),
-                (SCREEN_WIDTH - logicalWidth) / 2, centerY - 3, logicalWidth, .4f);
+            if (!progressDisplay) {
+                draw_expanded_minimap(viewer, racers, order.data(), centerX, centerY, 152, 88);
+            } else {
+                draw_expanded_race_progress(viewer, racers, order.data(),
+                    left, centerY - 3, right - left, .4f);
+            }
+            firstPlayer += count;
         }
+        gDPSetScissor(gDisplayListHead++, G_SC_NON_INTERLACE, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
     }
     gSPDisplayList(gDisplayListHead++, (Gfx*) D_02007F48);
 }
 
 extern "C" void LocalMP_DrawRacePositions(void) {
-    if (!LocalMP_IsActive() || mode == 2 || participants < 5 || paused || results || gHUDDisable || gRaceState <= RACE_STAGING) return;
+    if (!LocalMP_IsActive() || mode == 2 || participants == 1 ||
+        (participants < 5 && MultiplayerOptions_DisplayCount() == 1) ||
+        paused || results || gHUDDisable || gRaceState <= RACE_STAGING) return;
     init_rdp();
     gSPViewport(gDisplayListHead++, VIRTUAL_TO_PHYSICAL(D_802B8880));
     AddEffectMatrixOrtho();
@@ -956,14 +1056,18 @@ extern "C" void LocalMP_DrawRacePositions(void) {
     // Shrink both expanded race indicators another 20%, retaining the
     // existing per-player-count reduction and corner anchors.
     constexpr float expandedIndicatorScale = .8f;
-    const float scale = expandedIndicatorScale * fourPlayerPositionScale * (1.f - .1f * (participants - 4));
-    const float lapScale = expandedIndicatorScale * (1.f - .1f * (participants - 4));
+    const float basePositionScale = expandedIndicatorScale * fourPlayerPositionScale * (1.f - .1f * (std::min(participants, 8) - 4));
+    const float baseLapScale = expandedIndicatorScale * (1.f - .1f * (std::min(participants, 8) - 4));
     for (int player = 0; player < participants; ++player) {
         const auto& screen = gScreenContexts[player];
         const int left = screen.screenStartX - screen.screenWidth / 2;
         const int top = screen.screenStartY - screen.screenHeight / 2;
         const int right = left + screen.screenWidth;
         const int bottom = top + screen.screenHeight;
+        const float fit = std::min(1.f,
+            screen.screenWidth * GameEngine_GetAspectRatio() / (80.f * (4.f / 3.f)));
+        const float scale = basePositionScale * fit;
+        const float lapScale = baseLapScale * fit;
         const int rank = finished[player] && finishingPlace[player] >= 0 ?
                          finishingPlace[player] : gPlayers[player].currentRank;
         gDPSetScissor(gDisplayListHead++, G_SC_NON_INTERLACE, left, top, right, bottom);
@@ -982,16 +1086,19 @@ extern "C" void LocalMP_DrawRacePositions(void) {
 extern "C" void LocalMP_DrawPauseMenu(void) {
     if (!LocalMP_IsActive() || !paused || results) return;
     // Draw once after every racing viewport, in the native full-screen UI pass.
-    // This avoids four-player pause-coordinate tables for controller ports 5-8.
+    // This avoids four-player pause-coordinate tables for controller ports 5-16.
     init_rdp();
     gSPViewport(gDisplayListHead++, VIRTUAL_TO_PHYSICAL(D_802B8880));
     AddEffectMatrixOrtho();
     gSPDisplayList(gDisplayListHead++, (Gfx*) D_02007F18);
+    // Battle can leave the last player's scissor active. Restore full-screen
+    // clipping before drawing text; the 3D cursor installs its own clipping.
+    gDPSetScissor(gDisplayListHead++, G_SC_NON_INTERLACE, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
     gDisplayListHead = draw_box_wide(gDisplayListHead, OTRGetDimensionFromLeftEdge(0), 0,
                                     OTRGetDimensionFromRightEdge(SCREEN_WIDTH), SCREEN_HEIGHT, 0, 0, 0, 140);
     char title[160];
     std::snprintf(title, sizeof(title), "%s  %s", GetWorld()->Cups[selectedCup]->Name, D_800E76CC[gCCSelection]);
-    NativeText(160, 55, mode == 0 ? title : mode == 1 ? "VS RACE" : "BALLOON BATTLE", TEXT_YELLOW, .7f, 296);
+    NativeText(160, 55, mode == 0 ? title : mode == 1 ? "VS RACE" : mode == 3 ? "TIME TRIALS" : "BALLOON BATTLE", TEXT_YELLOW, .7f, 296);
     if (auto* properties = CM_GetProps()) NativeText(160, 82, properties->Name, TEXT_YELLOW, .7f, 296);
     const int labels[] = {0, 1, 4}; // Original CONTINUE GAME / RETRY / QUIT strings.
     for (int option = 0; option < 3; ++option) {
@@ -1017,6 +1124,31 @@ extern "C" void LocalMP_DrawBattleResults(void) {
     gDPSetScissor(gDisplayListHead++, G_SC_NON_INTERLACE, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
     draw_expanded_battle_results(characters.data(), points.data(), participants, battleWinner,
                                 battleResultChoice, &battleResultCursor);
+    gSPDisplayList(gDisplayListHead++, (Gfx*) D_02007F48);
+}
+
+extern "C" void LocalMP_DrawRaceResults(void) {
+    if (!LocalMP_RaceResultsOpen()) return;
+    const auto order = raceResultStandings ? OrderByPoints() : OrderByFinish();
+    std::array<ExpandedRaceResultRow, NUM_RACERS> rows{};
+    for (int rank = 0; rank < racers; ++rank) {
+        const int player = order[rank];
+        int place = rank;
+        if (raceResultStandings)
+            while (place > 0 && points[order[place - 1]] == points[player]) --place;
+        const int finishRank = finishingPlace[player];
+        rows[rank] = {place + 1, player, characters[player], points[player],
+                     mode == 0 && finishRank >= 0 && finishRank < 4 ? rewards[finishRank] : 0,
+                     finished[player], estimatedTime[player], finishTimes[player]};
+    }
+    init_rdp();
+    gSPViewport(gDisplayListHead++, VIRTUAL_TO_PHYSICAL(D_802B8880));
+    AddEffectMatrixOrtho();
+    gSPDisplayList(gDisplayListHead++, (Gfx*) D_02007F18);
+    gDPSetScissor(gDisplayListHead++, G_SC_NON_INTERLACE, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+    draw_expanded_race_results(rows.data(), racers, participants, mode, raceResultStandings,
+                              raceInCup + 1, static_cast<int>(GetWorld()->Cups[selectedCup]->GetSize()),
+                              CupComplete(), raceResultChoice, engineClass, &raceResultCursor);
     gSPDisplayList(gDisplayListHead++, (Gfx*) D_02007F48);
 }
 
@@ -1119,7 +1251,7 @@ extern "C" int LocalMP_FinishTick(void) {
     if (everyoneFinished) {
         // Native GP closes the race after all humans finish and estimates any
         // remaining CPU times from lap/path progress. Preserve that behavior.
-        if (mode == 0 && racers > participants) {
+        if (mode != 2 && racers > participants) {
             func_8028E298();
             for (int player = participants; player < racers; ++player) {
                 if (finished[player]) continue;
@@ -1178,10 +1310,13 @@ extern "C" void LocalMP_DrawUI(void) {
     }
     if (MultiplayerOptions_EightEnabled() && MultiplayerOptions_CanChange() && lobby && !active) {
         ImGui::SetNextWindowSize(ImVec2(570, 630), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("Local Multiplayer - 2 to 8 Players", &lobby)) {
-            ImGui::SliderInt("Players", &participants, 2, 8);
+        if (ImGui::Begin("Local Multiplayer - 2 to 16 Players", &lobby)) {
+            const int maxHumans = MultiplayerOptions_SixteenEnabled() ? MAX_HUMAN_PLAYERS : 8;
+            participants = std::clamp(participants, 2, maxHumans);
+            ImGui::SliderInt("Players", &participants, 2, maxHumans);
             ImGui::Combo("Mode", &mode, "Grand Prix\0VS Race\0Battle\0");
-            const int bots = mode == 0 && participants >= 3 && participants <= 7 &&
+            const int bots = mode != 2 && MultiplayerOptions_SixteenEnabled() ? NUM_RACERS - participants :
+                             mode == 0 && participants >= 3 && participants <= 7 &&
                              MultiplayerOptions_BotsEnabled() ? NUM_PLAYERS - participants : 0;
             ImGui::Text("%d human players + %d bots = %d racers", participants, bots, participants + bots);
             if (mode != 2) ImGui::Combo("Engine class", &engineClass, "50cc\0 100cc\0 150cc\0Extra / Mirror\0");
@@ -1231,9 +1366,13 @@ extern "C" void LocalMP_DrawUI(void) {
         ImGui::End();
     }
     if (!LocalMP_IsActive()) return;
-    if (results && !LocalMP_BattleResultsOpen()) {
+    if (results && mode == 2 && !LocalMP_BattleResultsOpen()) {
         ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(.5f, .5f));
         ImGui::SetNextWindowSize(ImVec2(490, 0), ImGuiCond_Appearing);
+        // Sixteen race rows plus cup standings must remain scrollable on
+        // small windows, with the continuation controls inside the window.
+        ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0),
+            ImVec2(std::numeric_limits<float>::max(), ImGui::GetMainViewport()->Size.y * .85f));
         ImGui::Begin("Multiplayer Results", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse);
         if (results) {
             const bool cupComplete = CupComplete();

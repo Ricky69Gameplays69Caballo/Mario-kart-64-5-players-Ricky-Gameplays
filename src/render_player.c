@@ -36,36 +36,36 @@
 #include "port/interpolation/FrameInterpolation.h"
 #include "port/Engine.h"
 
-s8 gRenderingFramebufferByPlayer[] = { 0x00, 0x02, 0x00, 0x01, 0x00, 0x01, 0x00, 0x02 };
+s8 gRenderingFramebufferByPlayer[] = { 0x00, 0x02, 0x00, 0x01, 0x00, 0x01, 0x00, 0x02, 0x00, 0x02, 0x00, 0x01, 0x00, 0x01, 0x00, 0x02 };
 
 s32 gPlayersToRenderCount = 0;
 
 // Can't find anything that actually references these...
 UNUSED void* D_800DDB5C[3] = { gFramebuffer0, gFramebuffer1, gFramebuffer2 };
 
-s16 gPlayersToRenderPlayerId[8];
-s16 gPlayersToRenderScreenId[8];
-Player* gPlayersToRenderPlayer[8];
+s16 gPlayersToRenderPlayerId[NUM_RACERS];
+s16 gPlayersToRenderScreenId[NUM_RACERS];
+Player* gPlayersToRenderPlayer[NUM_RACERS];
 s16 gMatrixEffectCount;
 s32 D_80164AF4[3];
 struct_D_802F1F80* gPlayerPalette;
 static const char* sKartTexture;
-u16 gPlayerRedEffect[8];
-u16 gPlayerGreenEffect[8];
-u16 gPlayerBlueEffect[8];
-u16 gPlayerCyanEffect[8];
-u16 gPlayerMagentaEffect[8];
-u16 gPlayerYellowEffect[8];
+u16 gPlayerRedEffect[NUM_RACERS];
+u16 gPlayerGreenEffect[NUM_RACERS];
+u16 gPlayerBlueEffect[NUM_RACERS];
+u16 gPlayerCyanEffect[NUM_RACERS];
+u16 gPlayerMagentaEffect[NUM_RACERS];
+u16 gPlayerYellowEffect[NUM_RACERS];
 // Likely an unused colour effect.
-UNUSED u16 gPlayerWhiteEffect[8];
+UNUSED u16 gPlayerWhiteEffect[NUM_RACERS];
 s32 D_80164B80[296];
 s16 D_80165020[40];
-Vec3f gPlayerLastVelocity[8];
-s16 gLastAnimFrameSelector[8][8];
-s16 gLastAnimGroupSelector[8][8];
-s16 D_80165150[8][8];
-s16 D_80165190[8][8];
-s16 D_801651D0[8][8];
+Vec3f gPlayerLastVelocity[NUM_RACERS];
+s16 gLastAnimFrameSelector[MAX_HUMAN_PLAYERS][NUM_RACERS];
+s16 gLastAnimGroupSelector[MAX_HUMAN_PLAYERS][NUM_RACERS];
+s16 D_80165150[MAX_HUMAN_PLAYERS][NUM_RACERS];
+s16 D_80165190[MAX_HUMAN_PLAYERS][NUM_RACERS];
+s16 D_801651D0[MAX_HUMAN_PLAYERS][NUM_RACERS];
 
 void func_8001F980(s32* arg0, s32* arg1) {
     if ((gDemoMode == 1) || (D_80164A28 != 0) || (D_8015F894 != 0)) {
@@ -210,8 +210,8 @@ void init_render_player(Player* player, Camera* camera, s8 playerId, s8 screenId
     s32 sp4C;
     s32 sp48;
     UNUSED s32 pad2;
-    s32 temp_v0;
-    s32 temp_v0_2;
+    u64 temp_v0;
+    u64 temp_v0_2;
 
     if (((player->type & PLAYER_EXISTS) == PLAYER_EXISTS) && !(player->type & PLAYER_UNKNOWN_0x40)) {
         func_8001F9E4(player, camera, screenId);
@@ -337,13 +337,25 @@ void load_kart_texture_and_render_kart_particles(s32 screenIdx) {
 void try_rendering_player(Player* player, s8 playerId, s8 screenIdx) {
 
     if (((player->type & PLAYER_EXISTS) == PLAYER_EXISTS) && ((player->type & PLAYER_UNKNOWN_0x40) == 0)) {
-        if ((player->unk_002 & 2 << (screenIdx * 4)) == 2 << (screenIdx * 4)) {
+        if ((player->unk_002 & 2ull << (screenIdx * 4)) == 2ull << (screenIdx * 4)) {
             render_player(player, playerId, screenIdx);
         }
     }
 }
 
 void render_players(Camera* camera, s32 screenIdx) {
+    if ((LocalMP_IsActive() || gGamestate == ENDING) && LocalMP_RacerCount() > NUM_PLAYERS) {
+        gPlayersToRenderCount = 0;
+        for (s8 racer = 0; racer < LocalMP_RacerCount(); ++racer)
+            init_render_player(&gPlayers[racer], camera, racer, screenIdx);
+        if (gPlayersToRenderCount) load_kart_texture_and_render_kart_particles(screenIdx);
+        for (s8 racer = 0; racer < LocalMP_RacerCount(); ++racer) {
+            try_rendering_player(&gPlayers[racer], racer, screenIdx);
+            render_kart_particles(&gPlayers[racer], racer, screenIdx);
+        }
+        gPlayersToRenderCount = 0;
+        return;
+    }
     UNUSED s32 pad;
     UNUSED char* sp3C[8] = {
         "S_MARIO", "S_LUIZI", "S_YOSSY", "S_KINOP", "S_DONKY", "S_WARIO", "S_PEACH", "S_KUPPA",
@@ -401,8 +413,16 @@ void render_players(Camera* camera, s32 screenIdx) {
 
 s32 junk[] = { 0, 0, 0 };
 
+static Vtx extraRacerVtx[NUM_RACERS - NUM_PLAYERS][16];
 Vtx* gPlayerVtx[] = { gPlayerOneVtx,  gPlayerTwoVtx, gPlayerThreeVtx, gPlayerFourVtx,
-                      gPlayerFiveVtx, gPlayerSixVtx, gPlayerSevenVtx, gPlayerEightVtx };
+                      gPlayerFiveVtx, gPlayerSixVtx, gPlayerSevenVtx, gPlayerEightVtx,
+                      extraRacerVtx[0], extraRacerVtx[1], extraRacerVtx[2], extraRacerVtx[3],
+                      extraRacerVtx[4], extraRacerVtx[5], extraRacerVtx[6], extraRacerVtx[7] };
+
+void init_extra_racer_vertices(void) {
+    for (s32 racer = 0; racer < NUM_RACERS - NUM_PLAYERS; ++racer)
+        memcpy(extraRacerVtx[racer], gPlayerOneVtx, sizeof(extraRacerVtx[racer]));
+}
 
 f32 gCharacterSize[] = { MARIO_SIZE, LUIGI_SIZE, YOSHI_SIZE, TOAD_SIZE, DK_SIZE, WARIO_SIZE, PEACH_SIZE, BOWSER_SIZE };
 
@@ -543,6 +563,7 @@ const char** wheelPtr[] = {
 s32 D_800DDE74[] = { 96, 128, 192, 256, 288, 384, 512, 544, 576, 0, 0 };
 
 void func_80021B0C(void) {
+    for (s8 racer = NUM_PLAYERS; racer < LocalMP_RacerCount(); ++racer) func_8006E7CC(&gPlayers[racer], racer, 0);
     func_8006E7CC(gPlayerOne, 0, 0);
     func_8006E7CC(gPlayerTwo, 1, 0);
     func_8006E7CC(gPlayerThree, 2, 0);
@@ -566,6 +587,7 @@ void func_80021B0C(void) {
 }
 
 void func_80021C78(void) {
+    for (s8 racer = NUM_PLAYERS; racer < LocalMP_RacerCount(); ++racer) func_8006E848(&gPlayers[racer], racer, 1);
     func_8006E848(gPlayerOne, 0, 1);
     func_8006E848(gPlayerTwo, 1, 1);
     func_8006E848(gPlayerThree, 2, 1);
@@ -1241,9 +1263,9 @@ void render_player_shadow(Player* player, s8 playerId, s8 screenId) {
         mtxf_translate_rotate(mtx, spCC, spC4);
         mtxf_scale(mtx, gCharacterSize[player->characterId] * player->size);
     }
-    convert_to_fixed_point_matrix(GetShadowMatrix(playerId + (screenId * 8)), mtx);
+    convert_to_fixed_point_matrix(GetShadowMatrix(playerId + (screenId * NUM_RACERS)), mtx);
 
-    gSPMatrix(gDisplayListHead++, GetShadowMatrix(playerId + (screenId * 8)),
+    gSPMatrix(gDisplayListHead++, GetShadowMatrix(playerId + (screenId * NUM_RACERS)),
               G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
 
     gSPDisplayList(gDisplayListHead++, D_0D008D58);
@@ -1293,9 +1315,9 @@ void render_player_shadow_credits(Player* player, s8 playerId, s8 screenId) {
 
     mtxf_translate_rotate(mtx, spCC, spC4);
     mtxf_scale(mtx, gCharacterSize[player->characterId] * player->size);
-    convert_to_fixed_point_matrix(GetShadowMatrix(playerId + (screenId * 8)), mtx);
+    convert_to_fixed_point_matrix(GetShadowMatrix(playerId + (screenId * NUM_RACERS)), mtx);
 
-    gSPMatrix(gDisplayListHead++, GetShadowMatrix(playerId + (screenId * 8)),
+    gSPMatrix(gDisplayListHead++, GetShadowMatrix(playerId + (screenId * NUM_RACERS)),
               G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
 
     gSPDisplayList(gDisplayListHead++, D_0D008D58);
@@ -1368,11 +1390,11 @@ void render_kart(Player* player, s8 playerId, s8 screenId, s8 flipOffset) {
     sKartTexture = gEncodedKartTexture[D_801651D0[screenId][playerId]][screenId][playerId].unk_00;
     mtxf_translate_rotate(mtx, sp154, sp14C);
     mtxf_scale(mtx, gCharacterSize[player->characterId] * player->size);
-    convert_to_fixed_point_matrix(GetKartMatrix(playerId + (screenId * 8)), mtx);
+    convert_to_fixed_point_matrix(GetKartMatrix(playerId + (screenId * NUM_RACERS)), mtx);
 
     if ((player->effects & BOO_EFFECT) == BOO_EFFECT) {
         if (screenId == playerId) {
-            gSPMatrix(gDisplayListHead++, GetKartMatrix(playerId + (screenId * 8)),
+            gSPMatrix(gDisplayListHead++, GetKartMatrix(playerId + (screenId * NUM_RACERS)),
                       G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
             gSPDisplayList(gDisplayListHead++, common_setting_render_character);
             gDPLoadTLUT_pal256(gDisplayListHead++, gPlayerPalette);
@@ -1386,7 +1408,7 @@ void render_kart(Player* player, s8 playerId, s8 screenId, s8 flipOffset) {
                              AA_EN | Z_CMP | Z_UPD | IM_RD | CVG_DST_WRAP | ZMODE_XLU | CVG_X_ALPHA | FORCE_BL |
                                  GBL_c2(G_BL_CLR_IN, G_BL_A_IN, G_BL_CLR_MEM, G_BL_1MA));
         } else {
-            gSPMatrix(gDisplayListHead++, GetKartMatrix(playerId + (screenId * 8)),
+            gSPMatrix(gDisplayListHead++, GetKartMatrix(playerId + (screenId * NUM_RACERS)),
                       G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
             gSPDisplayList(gDisplayListHead++, common_setting_render_character);
             gDPLoadTLUT_pal256(gDisplayListHead++, gPlayerPalette);
@@ -1402,7 +1424,7 @@ void render_kart(Player* player, s8 playerId, s8 screenId, s8 flipOffset) {
         }
     } else if (((player->lakituProps & LAKITU_FIZZLE) == LAKITU_FIZZLE) || (player->triggers & BECOME_BOMB_EFFECT) ||
                (player->triggers & LOSE_BATTLE_EFFECT)) {
-        gSPMatrix(gDisplayListHead++, GetKartMatrix(playerId + (screenId * 8)),
+        gSPMatrix(gDisplayListHead++, GetKartMatrix(playerId + (screenId * NUM_RACERS)),
                   G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
         gSPDisplayList(gDisplayListHead++, common_setting_render_character);
         gDPLoadTLUT_pal256(gDisplayListHead++, gPlayerPalette);
@@ -1413,7 +1435,7 @@ void render_kart(Player* player, s8 playerId, s8 screenId, s8 flipOffset) {
         gDPSetAlphaCompare(gDisplayListHead++, G_AC_DITHER);
         gDPSetRenderMode(gDisplayListHead++, G_RM_ZB_XLU_SURF, G_RM_ZB_XLU_SURF2);
     } else {
-        gSPMatrix(gDisplayListHead++, GetKartMatrix(playerId + (screenId * 8)),
+        gSPMatrix(gDisplayListHead++, GetKartMatrix(playerId + (screenId * NUM_RACERS)),
                   G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
         gSPDisplayList(gDisplayListHead++, common_setting_render_character);
         gDPLoadTLUT_pal256(gDisplayListHead++, gPlayerPalette);
@@ -1478,9 +1500,9 @@ void render_ghost(Player* player, s8 playerId, s8 screenId, s8 flipOffset) {
 
     mtxf_translate_rotate(mtx, spDC, spD4);
     mtxf_scale(mtx, gCharacterSize[player->characterId] * player->size);
-    convert_to_fixed_point_matrix(GetKartMatrix(playerId + (screenId * 8)), mtx);
+    convert_to_fixed_point_matrix(GetKartMatrix(playerId + (screenId * NUM_RACERS)), mtx);
 
-    gSPMatrix(gDisplayListHead++, GetKartMatrix(playerId + (screenId * 8)),
+    gSPMatrix(gDisplayListHead++, GetKartMatrix(playerId + (screenId * NUM_RACERS)),
               G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
 
     gSPDisplayList(gDisplayListHead++, common_setting_render_character);
@@ -1596,7 +1618,7 @@ void render_player_ice_reflection(Player* player, s8 playerId, s8 screenId, s8 f
 
 void render_player(Player* player, s8 playerId, s8 screenId) {
     UNUSED s32 pad[2];
-    s32 temp_t1;
+    u64 temp_t1;
     s32 var_v1;
     OSMesg* sp34;
 

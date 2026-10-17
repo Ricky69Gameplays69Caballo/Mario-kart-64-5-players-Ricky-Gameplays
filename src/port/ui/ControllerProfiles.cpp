@@ -27,7 +27,7 @@ struct PortUI {
     char name[96]{};
     int operation = 0; // 0: save as, 1: rename
 };
-std::array<PortUI, 8> ports;
+std::array<PortUI, 16> ports;
 
 std::string TrimName(const char* name) {
     std::string result(name);
@@ -120,7 +120,7 @@ Json Capture(int port, const std::string& name) {
 }
 void Apply(const Json& profile, int port) {
     const int from = profile.at("SourcePort").get<int>();
-    if (from < 0 || from >= 8 || !profile.at("Settings").is_object())
+    if (from < 0 || from >= 16 || !profile.at("Settings").is_object())
         throw std::runtime_error("Invalid controller profile.");
     Json incoming = profile.at("Settings");
     if (!incoming.contains("Port") || !incoming["Port"].is_object())

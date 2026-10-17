@@ -146,7 +146,7 @@ void OThwomp::Tick60fps() { // func_80081210
     }
 
     player = gPlayerOne;
-    for (var_s4 = 0; var_s4 < NUM_PLAYERS; var_s4++, player++) {
+    for (var_s4 = 0; var_s4 < LocalMP_RacerCount(); var_s4++, player++) {
         if (_idx == 0) { // Clear only once per frame
             player->tyres[FRONT_LEFT].unk_14 &= ~3;
             player->unk_046 &= ~0x0006;
@@ -815,7 +815,7 @@ void OThwomp::func_80080DE4(s32 arg0) {
     s32 var_v1;
 
     player = gPlayerOne;
-    for (var_v1 = 0; var_v1 < NUM_PLAYERS; var_v1++, player++) {
+    for (var_v1 = 0; var_v1 < LocalMP_RacerCount(); var_v1++, player++) {
         if (arg0 == player->unk_040) {
             player->triggers &= ~THWOMP_SQUISH_TRIGGER;
             player->unk_040 = -1;
@@ -1520,7 +1520,7 @@ void OThwomp::DrawEditorProperties() {
 
     if (ImGui::DragInt3("##Rotation", rot, 5.0f)) {
         for (size_t i = 0; i < 3; i++) {
-            // Wrap around 0–65535
+            // Wrap around 0â€“65535
             rot[i] = (rot[i] % 65536 + 65536) % 65536;
         }
         IRotator newRot;

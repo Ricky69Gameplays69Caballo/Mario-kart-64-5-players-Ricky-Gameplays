@@ -20,12 +20,12 @@
 #include "port/Game.h"
 #include "port/LocalMultiplayer.h"
 
-s32 D_8018D900[8];
-s16 D_8018D920[8];
-s32 gPlayerStarEffectStartTime[8];
-s32 gPlayerBooEffectStartTime[8];
-s32 gPlayerOtherScreensAlpha[8];
-s32 D_8018D990[8];
+s32 D_8018D900[NUM_RACERS];
+s16 D_8018D920[NUM_RACERS];
+s32 gPlayerStarEffectStartTime[NUM_RACERS];
+s32 gPlayerBooEffectStartTime[NUM_RACERS];
+s32 gPlayerOtherScreensAlpha[NUM_RACERS];
+s32 D_8018D990[NUM_RACERS];
 
 UNUSED void func_unnamed(void) {
 }
@@ -1679,8 +1679,10 @@ void func_80090178(Player* player, s8 playerId, Vec3f arg2, Vec3f arg3) {
         arg3[1] = temp_v1->y;
         arg3[2] = temp_v1->z;
     }
-    if (LocalMP_IsActive() && gModeSelection == BATTLE && battleSlot + 4 < LocalMP_Count()) {
-        const f32 offset = playerId < 4 ? -45.0f : 45.0f;
+    if (LocalMP_IsActive() && gModeSelection == BATTLE) {
+        const s32 padCount = (LocalMP_Count() + 3 - battleSlot) / 4;
+        const f32 spacing = IsDoubleDeck() ? 60.0f : 90.0f;
+        const f32 offset = ((playerId / 4) - (padCount - 1) * 0.5f) * spacing;
         const s32 axis = battleSlot < 2 ? 0 : 2;
         arg2[axis] += offset;
         arg3[axis] += offset;

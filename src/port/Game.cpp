@@ -3,6 +3,7 @@
 #include <typeinfo>
 
 #include "Game.h"
+#include "CrashMonitor.h"
 #include "port/Engine.h"
 
 #include <fast/Fast3dWindow.h>
@@ -38,6 +39,14 @@
 
 #ifdef _WIN32
 #include <locale.h>
+#include <windows.h>
+#include <DbgHelp.h>
+#include <spdlog/sinks/rotating_file_sink.h>
+#include <chrono>
+#include <csignal>
+#include <exception>
+#include <filesystem>
+#pragma comment(lib, "Dbghelp.lib")
 #endif
 
 extern "C" {
@@ -50,9 +59,148 @@ extern "C" {
 #include "spawn_players.h"
 #include "src/enhancements/collision_viewer.h"
 #include "code_800029B0.h"
+#include "code_80005FD0.h"
 #include "code_80057C60.h"
+#include "objects.h"
 // #include "engine/wasm.h"
 }
+
+#ifdef _WIN32
+namespace {
+std::shared_ptr<spdlog::logger> sDiagnostics;
+std::wstring sCrashDirectory;
+LPTOP_LEVEL_EXCEPTION_FILTER sPreviousCrashFilter = nullptr;
+volatile LONG sWritingCrash = 0;
+const char* sDiagnosticStage = "startup";
+
+void DiagnosticSnapshot(char* buffer, size_t capacity) {
+    size_t used = 0;
+    auto append = [&](const char* format, auto... args) {
+        if (used >= capacity - 1) return;
+        const int written = snprintf(buffer + used, capacity - used, format, args...);
+        if (written > 0) used += std::min(static_cast<size_t>(written), capacity - used - 1);
+    };
+    const int humans = LocalMP_Count();
+    const int racers = LocalMP_RacerCount();
+    append("frame=%d raceFrame=%d raceTime=%.3f stage=%s detailed=%d\n",
+           gGlobalTimer, gRaceFrameCounter, gCourseTimer, sDiagnosticStage,
+           CVarGetInteger("gDiagnostics.DetailedCrashLogging", 0));
+    append("game=%d next=%d race=%d mode=%d course=%d humans=%d racers=%d expanded=%d results=%d paused=%d\n",
+           gGamestate, gGamestateNext, gRaceState, gModeSelection, gCurrentCourseId,
+           humans, racers, LocalMP_IsActive(), LocalMP_RaceResultsOpen(), gIsGamePaused);
+    if (gGamestate != RACING) return;
+    for (int player = 0; player < std::clamp(racers, 0, NUM_RACERS); ++player) {
+        const Player& racer = gPlayers[player];
+        const int item = player < humans && player < MAX_HUMAN_PLAYERS ? gItemWindowObjectByPlayerId[player] : -1;
+        const int itemState = item >= 0 && item < OBJECT_LIST_SIZE ? gObjectList[item].state : -1;
+        append("slot=%d char=%d type=%04x effects=%08x rank=%d lap=%d pos=(%.2f,%.2f,%.2f) speed=%.2f item=%d state=%d\n",
+               player + 1, racer.characterId, static_cast<unsigned>(racer.type),
+               static_cast<unsigned>(racer.effects), racer.currentRank, gLapCountByPlayerId[player],
+               racer.pos[0], racer.pos[1], racer.pos[2], racer.speed, item, itemState);
+        if (CVarGetInteger("gDiagnostics.DetailedCrashLogging", 0)) {
+            append(" velocity=(%.3f,%.3f,%.3f) previous=(%.3f,%.3f,%.3f) lakitu=%04x kart=%04x drift=%d surface=%d\n",
+                   racer.velocity[0], racer.velocity[1], racer.velocity[2],
+                   racer.oldPos[0], racer.oldPos[1], racer.oldPos[2],
+                   static_cast<unsigned>(racer.lakituProps), static_cast<unsigned>(racer.kartProps),
+                   racer.driftDuration, racer.surfaceType);
+        }
+    }
+}
+
+LONG WINAPI DiagnosticCrashFilter(EXCEPTION_POINTERS* exception) {
+    if (InterlockedCompareExchange(&sWritingCrash, 1, 0) != 0) return EXCEPTION_EXECUTE_HANDLER;
+    SYSTEMTIME time;
+    GetSystemTime(&time);
+    wchar_t name[128];
+    swprintf_s(name, L"crash-%04u%02u%02u-%02u%02u%02u-%03u-p%lu", time.wYear, time.wMonth,
+               time.wDay, time.wHour, time.wMinute, time.wSecond, time.wMilliseconds, GetCurrentProcessId());
+    const std::wstring prefix = sCrashDirectory + L"/" + name;
+    HANDLE dump = CreateFileW((prefix + L".dmp").c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr,
+                              CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+    BOOL dumpWritten = FALSE;
+    DWORD dumpError = GetLastError();
+    if (dump != INVALID_HANDLE_VALUE) {
+        MINIDUMP_EXCEPTION_INFORMATION info{GetCurrentThreadId(), exception, FALSE};
+        dumpWritten = MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), dump,
+            static_cast<MINIDUMP_TYPE>(MiniDumpNormal | MiniDumpWithThreadInfo), &info, nullptr, nullptr);
+        dumpError = dumpWritten ? ERROR_SUCCESS : GetLastError();
+        FlushFileBuffers(dump);
+        CloseHandle(dump);
+    }
+    HANDLE report = CreateFileW((prefix + L".txt").c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr,
+                                CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (report != INVALID_HANDLE_VALUE) {
+        char text[8192] = {};
+        int size = snprintf(text, sizeof(text),
+            "Combined Windows crash\nUTC %04u-%02u-%02u %02u:%02u:%02u\nexception=0x%08lx address=%p thread=%lu dump=%s error=%lu\n",
+            time.wYear, time.wMonth, time.wDay, time.wHour, time.wMinute, time.wSecond,
+            exception->ExceptionRecord->ExceptionCode, exception->ExceptionRecord->ExceptionAddress,
+            GetCurrentThreadId(), dumpWritten ? "written" : "failed", dumpError);
+        DiagnosticSnapshot(text + size, sizeof(text) - size);
+        DWORD written;
+        WriteFile(report, text, static_cast<DWORD>(strlen(text)), &written, nullptr);
+        FlushFileBuffers(report);
+        CloseHandle(report);
+    }
+    // Reports and dumps are on disk before invoking the existing dialog/stack logger.
+    return sPreviousCrashFilter ? sPreviousCrashFilter(exception) : EXCEPTION_EXECUTE_HANDLER;
+}
+
+[[noreturn]] void DiagnosticAbort(int) {
+    CONTEXT context{};
+    RtlCaptureContext(&context);
+    EXCEPTION_RECORD record{};
+    record.ExceptionCode = 0xE0000001; // C++ terminate/SIGABRT, rather than a hardware fault.
+#ifdef _WIN64
+    record.ExceptionAddress = reinterpret_cast<void*>(context.Rip);
+#else
+    record.ExceptionAddress = reinterpret_cast<void*>(context.Eip);
+#endif
+    EXCEPTION_POINTERS exception{&record, &context};
+    DiagnosticCrashFilter(&exception);
+    ExitProcess(3);
+}
+
+void InitCrashDiagnostics() {
+    sCrashDirectory = std::filesystem::path(Ship::Context::GetPathRelativeToAppDirectory("logs")).wstring();
+    std::filesystem::create_directories(sCrashDirectory);
+    auto sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
+        Ship::Context::GetPathRelativeToAppDirectory("logs/diagnostics.log"), 16 * 1024 * 1024, 5);
+    // Synchronous, infrequent state records survive abrupt process termination.
+    sDiagnostics = std::make_shared<spdlog::logger>("combined-diagnostics", sink);
+    sDiagnostics->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%l] %v");
+    sDiagnostics->flush_on(spdlog::level::info);
+    sDiagnostics->info("Crash diagnostics enabled; pid={}; UTC crash reports and minidumps in logs", GetCurrentProcessId());
+    sPreviousCrashFilter = SetUnhandledExceptionFilter(DiagnosticCrashFilter);
+    std::signal(SIGABRT, DiagnosticAbort);
+    std::set_terminate([] { DiagnosticAbort(SIGABRT); });
+}
+
+void TickCrashDiagnostics() {
+    if (!sDiagnostics) return;
+    static int lastGame = -1, lastRace = -1, lastCourse = -1;
+    static int lastDetailed = -1;
+    static auto lastWrite = std::chrono::steady_clock::time_point{};
+    const auto now = std::chrono::steady_clock::now();
+    const bool detailed = CVarGetInteger("gDiagnostics.DetailedCrashLogging", 0) != 0;
+    CrashMonitor_SetEnabled(detailed);
+    if (lastDetailed != detailed) {
+        sDiagnostics->info("Detailed crash logging {}", detailed ? "enabled (250 ms snapshots; external crash monitor)" : "disabled");
+        lastDetailed = detailed;
+        lastGame = -1;
+    }
+    if (lastGame == gGamestate && lastRace == gRaceState && lastCourse == gCurrentCourseId &&
+        now - lastWrite < std::chrono::milliseconds(detailed ? 250 : 5000)) return;
+    lastGame = gGamestate;
+    lastRace = gRaceState;
+    lastCourse = gCurrentCourseId;
+    lastWrite = now;
+    char snapshot[8192] = {};
+    DiagnosticSnapshot(snapshot, sizeof(snapshot));
+    sDiagnostics->info("{}", snapshot);
+}
+}
+#endif
 
 extern "C" void Graphics_PushFrame(Gfx* pool) {
     GameEngine::ProcessGfxCommands(pool);
@@ -986,10 +1134,27 @@ static void ApplyPendingReset() {
 
 void push_frame() {
     ApplyPendingReset();
+#ifdef _WIN32
+    sDiagnosticStage = "frame start";
+    TickCrashDiagnostics();
+    sDiagnosticStage = "audio start";
+#endif
     GameEngine::StartAudioFrame();
+#ifdef _WIN32
+    sDiagnosticStage = "engine start";
+#endif
     GameEngine::Instance->StartFrame();
+#ifdef _WIN32
+    sDiagnosticStage = "game iteration";
+#endif
     thread5_iteration();
+#ifdef _WIN32
+    sDiagnosticStage = "audio end";
+#endif
     GameEngine::EndAudioFrame();
+#ifdef _WIN32
+    sDiagnosticStage = "frame complete";
+#endif
     // thread5_game_loop();
     // Graphics_ThreadUpdate();w
 }
@@ -1033,6 +1198,11 @@ extern "C"
 #ifdef _WIN32
     // Allow non-ascii characters for Windows
     setlocale(LC_ALL, ".UTF8");
+    if (argc == 4 && strcmp(argv[1], "--crash-monitor") == 0) {
+        const int result = CrashMonitor_Run(strtoul(argv[2], nullptr, 10), argv[3]);
+        // This helper never initializes the game. Skip game-only static destructors.
+        ExitProcess(static_cast<UINT>(result));
+    }
 #endif
 #if defined(__APPLE__)
     // Disable the macOS "press and hold" accent/diacritic popup for this app. SDL keeps a Cocoa text
@@ -1052,6 +1222,9 @@ extern "C"
 #endif
     // load_wasm();
     GameEngine::Create();
+#ifdef _WIN32
+    InitCrashDiagnostics();
+#endif
     audio_init();
     sound_init();
 
@@ -1083,6 +1256,11 @@ extern "C"
         push_frame();
     }
     CustomEngineDestroy();
+#ifdef _WIN32
+    sDiagnostics->info("Normal game shutdown");
+    sDiagnostics->flush();
+    CrashMonitor_Stop();
+#endif
     // GameEngine::Instance->ProcessFrame(push_frame);
     GameEngine::Instance->Destroy();
     // Everything user-visible (config, saves) is persisted by Destroy(). Skip the

@@ -187,6 +187,8 @@ extern "C" int16_t RaceManager_GetRandomHumanItem(uint32_t rank) {
         return ITEM_NONE;
     }
 
+    if (LocalMP_IsActive() && LocalMP_RacerCount() > NUM_PLAYERS)
+        rank = std::min<uint32_t>(NUM_PLAYERS - 1, rank * NUM_PLAYERS / LocalMP_RacerCount());
     return table->Roll(rank);
 }
 
@@ -198,5 +200,7 @@ extern "C" int16_t RaceManager_GetRandomCPUItem(uint32_t rank) {
         return ITEM_NONE;
     }
 
+    if (LocalMP_IsActive() && LocalMP_RacerCount() > NUM_PLAYERS)
+        rank = std::min<uint32_t>(NUM_PLAYERS - 1, rank * NUM_PLAYERS / LocalMP_RacerCount());
     return table->Roll(rank);
 }

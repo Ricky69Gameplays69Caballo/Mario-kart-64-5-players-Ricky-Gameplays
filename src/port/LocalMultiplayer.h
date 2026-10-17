@@ -4,12 +4,20 @@
 extern "C" {
 #endif
 // Saved PC menu options. Changes are accepted only outside gameplay.
+#define CVAR_MULTIPLAYER_SIXTEEN "gMultiplayer.Enable16Players"
 #define CVAR_MULTIPLAYER_EIGHT "gMultiplayer.Enable8Players"
 #define CVAR_MULTIPLAYER_BOTS "gMultiplayer.Enable3P4PBots"
+#define CVAR_MULTIPLAYER_SCREENS "gMultiplayer.Screens"
+#define CVAR_MULTIPLAYER_RACE_BOMBS "gMultiplayer.EnableRaceBombKarts"
+#define CVAR_MINIMAP_SIZE "gMultiplayer.MinimapSizePercent"
+#define CVAR_MINIMAP_TRANSPARENCY "gMultiplayer.MinimapTransparencyPercent"
+int MultiplayerOptions_DisplayCount(void);
 #define CVAR_RACER_RENDER_DISTANCE "gMultiplayer.RacerRenderDistance"
 // Live graphics setting: available in every racing mode, independent of toggles.
 float RacerRenderDistance_Multiplier(void);
 float RacerRenderDistance_FarPlane(float normalFar);
+int MultiplayerOptions_SixteenEnabled(void);
+void MultiplayerOptions_OnSixteenChanged(void);
 int MultiplayerOptions_EightEnabled(void);
 int MultiplayerOptions_BotsEnabled(void);
 int MultiplayerOptions_CanChange(void);
@@ -24,6 +32,8 @@ void LocalMP_DrawGameMenu(void);
 void LocalMP_DrawGameMenuHint(void);
 void LocalMP_DrawPauseMenu(void);
 int LocalMP_BattleResultsOpen(void);
+int LocalMP_RaceResultsOpen(void);
+void LocalMP_DrawRaceResults(void);
 void LocalMP_DrawBattleResults(void);
 void LocalMP_DrawRacePositions(void);
 void LocalMP_DrawItemWindows(void);

@@ -455,6 +455,13 @@ void draw_expanded_menu_background(void);
 void draw_expanded_character_select(const s32* characters, const u8* ready, s32 count, s32 allReady);
 void draw_expanded_battle_results(const s32* characters, const s32* wins, s32 count, s32 winner,
                                   s32 choice, MenuItem* cursor);
+typedef struct {
+    s32 place, player, character, points, reward, finished, estimated;
+    f32 time;
+} ExpandedRaceResultRow;
+void draw_expanded_race_results(const ExpandedRaceResultRow* rows, s32 count, s32 humans,
+                                s32 mode, s32 standings, s32 round, s32 totalRounds,
+                                s32 cupComplete, s32 choice, s32 engineClass, MenuItem* cursor);
 void draw_expanded_course_select(s32 cup, s32 previewTrack, s32 mode, s32 stage, s32 engineClass);
 void draw_expanded_menu_title(void);
 void draw_expanded_menu_button(s32 column, s32 row, s32 kind, s32 selected, s32 confirmed);

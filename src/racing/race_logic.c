@@ -129,7 +129,7 @@ void func_8028E298(void) {
     s32 i;
     u16 temp_a2;
 
-    for (i = 0; i < NUM_PLAYERS; i++) {
+    for (i = 0; i < LocalMP_RacerCount(); i++) {
 
         if ((gPlayers[i].type & PLAYER_CINEMATIC_MODE)) {
             continue;
@@ -469,7 +469,7 @@ void start_race(void) {
         gRaceState = RACE_IN_PROGRESS;
     }
 
-    for (i = 0; i < NUM_PLAYERS; i++) {
+    for (i = 0; i < LocalMP_RacerCount(); i++) {
 
         if ((gPlayers[i].type & PLAYER_EXISTS) == 0) {
             continue;
@@ -499,7 +499,7 @@ void func_8028EF28(void) {
     s16 currentPosition;
     s32 i;
 
-    for (i = 0; i < NUM_PLAYERS; i++) {
+    for (i = 0; i < LocalMP_RacerCount(); i++) {
         Player* player = &gPlayers[i];
 
         if ((gPlayers[i].type & PLAYER_EXISTS) == 0) {
@@ -624,7 +624,7 @@ void update_race_position_data(void) {
     s16 i;
     s16 position;
 
-    for (i = 0; i < NUM_PLAYERS; i++) {
+    for (i = 0; i < LocalMP_RacerCount(); i++) {
         if (((gPlayers[i].type & PLAYER_EXISTS) != 0) && ((gPlayers[i].type & PLAYER_CINEMATIC_MODE) == 0) &&
             ((gPlayers[i].type & PLAYER_INVISIBLE_OR_BOMB) == 0)) {
             position = gGPCurrentRaceRankByPlayerId[i];
@@ -642,7 +642,7 @@ void func_8028F474(void) {
         case RACE_CALCULATE_RANKS:
         case RACE_FINISHED:
         case RACE_EXIT:
-            for (i = 0; i < NUM_PLAYERS; i++) {
+            for (i = 0; i < LocalMP_RacerCount(); i++) {
                 update_player(i);
             }
         case RACE_SETUP:
@@ -842,7 +842,7 @@ void func_8028F970(void) {
                 printf("[race_logic.c] [func_8028F970] Skipped laps for players 1 & 2\n");
             }
             if (gControllerOne->buttonPressed & D_JPAD) {
-                for (size_t i = 0; i < NUM_PLAYERS; i++) {
+                for (size_t i = 0; i < LocalMP_RacerCount(); i++) {
                     gLapCountByPlayerId[i] = 2;
                 }
                 play_sound2(SOUND_MENU_OPTION);
@@ -921,7 +921,7 @@ void func_8028FCBC(void) {
             if (gScreenModeSelection != SCREEN_MODE_1P) {
                 func_8005C64C(&D_8018D2AC);
             }
-            for (i = 0; i < NUM_PLAYERS; i++) {
+            for (i = 0; i < LocalMP_RacerCount(); i++) {
                 if ((ply->type & PLAYER_EXISTS) == 0) {
                     continue;
                 }
@@ -945,7 +945,7 @@ void func_8028FCBC(void) {
                 D_800DC5B0 = 0;
                 D_800DC5B8 = 1;
                 CM_SpawnStarterLakitu(); // func_80078F64();
-                if ((gModeSelection == TIME_TRIALS) && (bCourseGhostDisabled == 0)) {
+                if ((gModeSelection == TIME_TRIALS) && (bCourseGhostDisabled == 0) && !LocalMP_IsActive()) {
                     phi_v0_4 = 0x1;
                     //! @warning this used to be < gCurrentCourseId
                     // Hopefully this is equivallent.
@@ -1241,13 +1241,13 @@ void func_802909F0(void) {
     s32 i;
     s32 k;
 
-    for (i = 0; i < 7; i++) {
+    for (i = 0; i < LocalMP_RacerCount() - 1; i++) {
         ply = &gPlayers[i];
 
         if ((ply->type & PLAYER_EXISTS) && (!(ply->effects & 0x80000000)) &&
             (!(ply->type & PLAYER_INVISIBLE_OR_BOMB)) && (!(ply->effects & 0x4000000))) {
 
-            for (k = i + 1; k < NUM_PLAYERS; k++) {
+            for (k = i + 1; k < LocalMP_RacerCount(); k++) {
                 ply2 = &gPlayers[k];
 
                 if ((ply2->type & PLAYER_EXISTS) && (!(ply2->effects & 0x80000000)) &&

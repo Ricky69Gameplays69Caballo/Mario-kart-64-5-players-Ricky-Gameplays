@@ -1,3 +1,4 @@
+#include <defines.h>
 #ifndef RENDER_PLAYER_H
 #define RENDER_PLAYER_H
 
@@ -16,6 +17,7 @@ u16 func_8001FD78(Player*, f32, f32, f32);
 void init_render_player(Player*, Camera*, s8, s8);
 void load_kart_texture_and_render_kart_particles(s32 screenIdx);
 void try_rendering_player(Player*, s8, s8);
+void init_extra_racer_vertices(void);
 void render_players(Camera* camera, s32 screenIdx);
 void func_80021B0C(void);
 void func_80021C78(void);
@@ -266,11 +268,11 @@ extern u8* gKartWario189Wheel0[];
 
 extern s16 D_80165020[40];
 // Used to calculate difference between previous and current player velocity.
-extern Vec3f gPlayerLastVelocity[8];
-extern s16 gLastAnimFrameSelector[8][8];
-extern s16 gLastAnimGroupSelector[8][8];
-extern s16 D_80165150[8][8];
-extern s16 D_80165190[8][8];
-extern s16 D_801651D0[8][8];
+extern Vec3f gPlayerLastVelocity[NUM_RACERS];
+extern s16 gLastAnimFrameSelector[MAX_HUMAN_PLAYERS][NUM_RACERS];
+extern s16 gLastAnimGroupSelector[MAX_HUMAN_PLAYERS][NUM_RACERS];
+extern s16 D_80165150[MAX_HUMAN_PLAYERS][NUM_RACERS];
+extern s16 D_80165190[MAX_HUMAN_PLAYERS][NUM_RACERS];
+extern s16 D_801651D0[MAX_HUMAN_PLAYERS][NUM_RACERS];
 
 #endif // RENDER_PLAYER_H

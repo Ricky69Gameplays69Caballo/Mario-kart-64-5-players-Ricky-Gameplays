@@ -189,33 +189,7 @@ s16** cpu_forTwoPlayer[] = { gListCPUforMario, gListCPUforLuigi, gListCPUforYosh
 
 // func_80027D00
 s32 get_player_index_for_player(Player* player) {
-    s32 index;
-
-    if (player == gPlayerOne) {
-        index = 0;
-    }
-    if (player == gPlayerTwo) {
-        index = 1;
-    }
-    if (player == gPlayerThree) {
-        index = 2;
-    }
-    if (player == gPlayerFour) {
-        index = 3;
-    }
-    if (player == gPlayerFive) {
-        index = 4;
-    }
-    if (player == gPlayerSix) {
-        index = 5;
-    }
-    if (player == gPlayerSeven) {
-        index = 6;
-    }
-    if (player == gPlayerEight) {
-        index = 7;
-    }
-    return index;
+    return (s32) (player - gPlayers);
 }
 
 void func_80027DA8(Player* player, s8 playerId) {
@@ -427,7 +401,11 @@ void func_80028E70(Player* player, Camera* camera, s8 playerId, s8 screenId) {
                 switch (gModeSelection) {
                     case TIME_TRIALS:
                     case VERSUS:
-                        func_80028C44(player, camera, playerId, screenId);
+                        if (LocalMP_IsActive() && (player->type & PLAYER_CPU)) {
+                            func_80028864(player, camera, playerId, screenId);
+                        } else {
+                            func_80028C44(player, camera, playerId, screenId);
+                        }
                         break;
                     case BATTLE:
                         func_80028D3C(player, camera, playerId, screenId);
@@ -1273,49 +1251,15 @@ void func_8002B830(Player* player, s8 playerId, s8 screenId) {
 }
 
 UNUSED void func_8002B8A4(Player* player_one, Player* player_two) {
-    s32 var_v1;
+    const s32 firstPlayerIndex = get_player_index_for_player(player_one);
+    const s32 secondPlayerIndex = get_player_index_for_player(player_two);
 
-    // clang-format off
-    /*
-    if's are being done bracket-less on purpose,
-    Technically only the `player_one == gPlayerEight` NEEDS to be
-    bracket-less that looks weird
-    */
-    if (player_one == gPlayerOne) {   var_v1 = 0;
-}
-    if (player_one == gPlayerTwo) {   var_v1 = 1;
-}
-    if (player_one == gPlayerThree) { var_v1 = 2;
-}
-    if (player_one == gPlayerFour) {  var_v1 = 3;
-}
-    if (player_one == gPlayerFive) {  var_v1 = 4;
-}
-    if (player_one == gPlayerSix) {   var_v1 = 5;
-}
-    if (player_one == gPlayerSeven) { var_v1 = 6;
-}
-    if (player_one == gPlayerEight) { var_v1 = 7;
-}
-    D_801653C0[var_v1] = player_two;
-    if (player_two == gPlayerOne) {   var_v1 = 0;
-}
-    if (player_two == gPlayerTwo) {   var_v1 = 1;
-}
-    if (player_two == gPlayerThree) { var_v1 = 2;
-}
-    if (player_two == gPlayerFour) {  var_v1 = 3;
-}
-    if (player_two == gPlayerFive) {  var_v1 = 4;
-}
-    if (player_two == gPlayerSix) {   var_v1 = 5;
-}
-    if (player_two == gPlayerSeven) { var_v1 = 6;
-}
-    if (player_two == gPlayerEight) { var_v1 = 7;
-}
-    D_801653C0[var_v1] = player_one;
-    // clang-format on
+    if (firstPlayerIndex < 0 || firstPlayerIndex >= NUM_RACERS ||
+        secondPlayerIndex < 0 || secondPlayerIndex >= NUM_RACERS) {
+        return;
+    }
+    D_801653C0[firstPlayerIndex] = player_two;
+    D_801653C0[secondPlayerIndex] = player_one;
 }
 
 void func_8002B9CC(Player* player, s8 arg1, UNUSED s32 arg2) {
@@ -1467,7 +1411,7 @@ void func_8002BF4C(Player* player, s8 arg1) {
             player->effects &= 0xFFDFFFFF;
         }
     } else {
-        for (i = 0; i < NUM_PLAYERS; i++) {
+        for (i = 0; i < LocalMP_RacerCount(); i++) {
             playerBorrow = &players[i];
             if (((player != playerBorrow) && ((playerBorrow->type & PLAYER_INVISIBLE_OR_BOMB) == 0) && (playerBorrow->type & 0x8000)) &&
                 ((var_a2 = func_8001FD78(player, playerBorrow->pos[0], playerBorrow->pos[1], playerBorrow->pos[2]),
@@ -2895,31 +2839,10 @@ void update_player_kart_hop(Player* player) {
 }
 
 void detect_triple_a_combo_a_released(Player* player) {
-    s32 playerIndex;
+    const s32 playerIndex = get_player_index_for_player(player);
 
-    if (player == gPlayerOne) {
-        playerIndex = 0;
-    }
-    if (player == gPlayerTwo) {
-        playerIndex = 1;
-    }
-    if (player == gPlayerThree) {
-        playerIndex = 2;
-    }
-    if (player == gPlayerFour) {
-        playerIndex = 3;
-    }
-    if (player == gPlayerFive) {
-        playerIndex = 4;
-    }
-    if (player == gPlayerSix) {
-        playerIndex = 5;
-    }
-    if (player == gPlayerSeven) {
-        playerIndex = 6;
-    }
-    if (player == gPlayerEight) {
-        playerIndex = 7;
+    if (playerIndex < 0 || playerIndex >= NUM_RACERS) {
+        return;
     }
     if (gIsPlayerTripleAButtonCombo[playerIndex] == false) {
         if (gPlayerIsThrottleActive[playerIndex] == true) {
@@ -2955,31 +2878,10 @@ void detect_triple_a_combo_a_released(Player* player) {
 }
 
 void detect_triple_a_combo_a_pressed(Player* player) {
-    s32 playerIndex;
+    const s32 playerIndex = get_player_index_for_player(player);
 
-    if (player == gPlayerOne) {
-        playerIndex = 0;
-    }
-    if (player == gPlayerTwo) {
-        playerIndex = 1;
-    }
-    if (player == gPlayerThree) {
-        playerIndex = 2;
-    }
-    if (player == gPlayerFour) {
-        playerIndex = 3;
-    }
-    if (player == gPlayerFive) {
-        playerIndex = 4;
-    }
-    if (player == gPlayerSix) {
-        playerIndex = 5;
-    }
-    if (player == gPlayerSeven) {
-        playerIndex = 6;
-    }
-    if (player == gPlayerEight) {
-        playerIndex = 7;
+    if (playerIndex < 0 || playerIndex >= NUM_RACERS) {
+        return;
     }
     if (gIsPlayerTripleAButtonCombo[playerIndex] == false) {
         if (gPlayerIsThrottleActive[playerIndex] == false) {
@@ -3154,31 +3056,10 @@ void player_decelerate_alternative(Player* player, f32 speed) {
 }
 
 void detect_triple_b_combo_b_released(Player* player) {
-    s32 playerIndex;
+    const s32 playerIndex = get_player_index_for_player(player);
 
-    if (player == gPlayerOne) {
-        playerIndex = 0;
-    }
-    if (player == gPlayerTwo) {
-        playerIndex = 1;
-    }
-    if (player == gPlayerThree) {
-        playerIndex = 2;
-    }
-    if (player == gPlayerFour) {
-        playerIndex = 3;
-    }
-    if (player == gPlayerFive) {
-        playerIndex = 4;
-    }
-    if (player == gPlayerSix) {
-        playerIndex = 5;
-    }
-    if (player == gPlayerSeven) {
-        playerIndex = 6;
-    }
-    if (player == gPlayerEight) {
-        playerIndex = 7;
+    if (playerIndex < 0 || playerIndex >= NUM_RACERS) {
+        return;
     }
 
     if (gIsPlayerTripleBButtonCombo[playerIndex] == false) {
@@ -3215,31 +3096,10 @@ void detect_triple_b_combo_b_released(Player* player) {
 }
 
 void detect_triple_b_combo_b_pressed(Player* player) {
-    s32 playerIndex;
+    const s32 playerIndex = get_player_index_for_player(player);
 
-    if (player == gPlayerOne) {
-        playerIndex = 0;
-    }
-    if (player == gPlayerTwo) {
-        playerIndex = 1;
-    }
-    if (player == gPlayerThree) {
-        playerIndex = 2;
-    }
-    if (player == gPlayerFour) {
-        playerIndex = 3;
-    }
-    if (player == gPlayerFive) {
-        playerIndex = 4;
-    }
-    if (player == gPlayerSix) {
-        playerIndex = 5;
-    }
-    if (player == gPlayerSeven) {
-        playerIndex = 6;
-    }
-    if (player == gPlayerEight) {
-        playerIndex = 7;
+    if (playerIndex < 0 || playerIndex >= NUM_RACERS) {
+        return;
     }
 
     if (gIsPlayerTripleBButtonCombo[playerIndex] == false) {
@@ -3276,34 +3136,13 @@ void detect_triple_b_combo_b_pressed(Player* player) {
 }
 
 void func_800323E4(Player* player) {
-    s32 var_v1;
+    const s32 var_v1 = get_player_index_for_player(player);
     f32 test;
     f32 var_f2;
 
     var_f2 = 0.0f;
-    if (player == gPlayerOne) {
-        var_v1 = 0;
-    }
-    if (player == gPlayerTwo) {
-        var_v1 = 1;
-    }
-    if (player == gPlayerThree) {
-        var_v1 = 2;
-    }
-    if (player == gPlayerFour) {
-        var_v1 = 3;
-    }
-    if (player == gPlayerFive) {
-        var_v1 = 4;
-    }
-    if (player == gPlayerSix) {
-        var_v1 = 5;
-    }
-    if (player == gPlayerSeven) {
-        var_v1 = 6;
-    }
-    if (player == gPlayerEight) {
-        var_v1 = 7;
+    if (var_v1 < 0 || var_v1 >= NUM_RACERS) {
+        return;
     }
     player->effects |= 1;
     // This check will never be true, why is it here?

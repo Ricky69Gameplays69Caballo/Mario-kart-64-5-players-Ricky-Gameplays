@@ -65,7 +65,7 @@ Vtx Sky::mSkyboxScreenFour[8] = { // D_802B8A10
     { { { 0, 120, -1 }, 0, { 0, 0 }, { 0x00, 0xDC, 0x00, 0xFF } } },
 };
 
-static Vtx sExtraSkyboxes[4][8];
+static Vtx sExtraSkyboxes[MAX_HUMAN_PLAYERS - 4][8];
 Sky* Sky::Instance;
 
 Sky::Sky() {

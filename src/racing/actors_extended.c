@@ -859,7 +859,7 @@ s32 use_banana_item(Player* player) {
     Vec3f startingPos;
 
     playerId = player - gPlayerOne;
-    if (playerId >= 8) {
+    if (playerId >= NUM_RACERS) {
         return -1;
     }
     // Extremely weird fake match to fix a tiny stack difference
@@ -911,7 +911,7 @@ void use_thunder_item(Player* player) {
         func_800CAB4C(player - gPlayerOne);
     }
 
-    for (index = 0; index < NUM_PLAYERS; index++) {
+    for (index = 0; index < LocalMP_RacerCount(); index++) {
         otherPlayer = &gPlayers[index];
         if (player != otherPlayer) {
             otherPlayer->triggers |= LIGHTNING_STRIKE_TRIGGER;

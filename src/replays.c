@@ -1,3 +1,4 @@
+#include "port/LocalMultiplayer.h"
 #include <libultraship.h>
 #include <macros.h>
 #include <mk64.h>
@@ -166,6 +167,10 @@ void func_800052A4(void) {
 }
 
 void func_80005310(void) {
+    if (gGamestate == RACING && !gDemoMode && gModeSelection == TIME_TRIALS && MultiplayerOptions_SixteenEnabled()) {
+        gPostTimeTrialReplayCannotSave = 1;
+        return;
+    }
 
     if (gModeSelection == TIME_TRIALS) {
 

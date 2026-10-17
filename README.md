@@ -4,30 +4,22 @@ An unofficial fork of **[HarbourMasters/SpaghettiKart](https://github.com/Harbou
 
 ## Added features
 
-- Local play for 5–8 humans, with Grand Prix, VS, and Battle.
-- Grand Prix for 3 and 4 players; optional bots fill the Grand Prix grid to eight racers for 3–7 humans.
-- Game-style menus for mode, engine class, character, cup, and course selection, including repeated characters.
-- Smaller position numbers, lap counters, and item boxes for the extra split screens, with item roulette and its sound.
-- A shared minimap and race progress display. The course minimap uses the widest player's screen; the line display stays at the screen divider.
-- A selectable player preference for the wider split screen in 5, 7, and 8 player layouts.
-- Expanded Battle rankings with colored portraits and win totals, plus retry, course change, driver change, and quit.
-- Controller bindings and reusable profiles for all eight ports.
-- Adjustable racer render distance, from the original 1x range to 5x.
-- A reversible **All tracks completed** cheat toggle that unlocks Mirror mode and the alternate title background while enabled.
-- A **Skip to Grand Prix finale** cheat for 3–8 players, using current cup standings without awarding saved trophies.
-- Expanded podium ceremonies with the remaining racers as spectators, corrected shadows, and a row angled away from the winner's path.
+- Local Grand Prix, VS and Battle for up to 16 humans, expanded controller ports and reusable profiles.
+- Optional 16-racer grids with bots, faster item-box respawns, expanded results and custom place labels 9–16.
+- One, two or three screens: 16 players use 4x4, 8 / 8, or 6 / 5 / 5 layouts respectively.
+- One shared minimap or progress line on each screen, with configurable minimap size and transparency including racer markers.
+- Cyclic 1–16 player selection, smaller expanded HUD, visible item roulette and restored drift audio.
+- Battle rankings, safer arena spawns, pause menu fixes and optional race bomb karts for 3+ players.
+- Racer render distance, reversible All tracks completed cheat, Grand Prix finale preview and expanded spectator ceremonies.
+- Extra-racer crash fixes and Windows crash/diagnostic logging.
 
 ## Getting started
 
-Download the **Windows x64** build from **[Releases](https://github.com/Ricky69Gameplays69Caballo/Mario-kart-64-5-players-Ricky-Gameplays/releases)**. Extract the entire ZIP, then open `Spaghettify.exe`. See the [release setup guide](docs/RELEASE-NOTES.md). Downloadable releases are Windows-only for now; macOS, Linux, ARM, and Android builds are deferred.
+Download **Windows x64 v0.2.0** from [Releases](https://github.com/Ricky69Gameplays69Caballo/Mario-kart-64-5-players-Ricky-Gameplays/releases/latest), extract the entire ZIP, and run `Launch-Combined.cmd` or `Spaghettify.exe`. Read the [release setup guide](docs/RELEASE-NOTES.md). Other platforms are deferred.
 
-Open the PC menu with **Escape**. **Enable 8 players** and **Enable bots in 3 to 7 player grand prix** now default to enabled; existing saved choices are preserved. These options are under **Multiplayer → Local play**. Move right past 4P on GAME SELECT to reach 5P–8P. Either multiplayer option also exposes Grand Prix in the normal 3P/4P menus.
+Open **Escape → Multiplayer → Local play**. Enable **16 players** for the 9–16P choices and select **Number of screens**. Windows must extend the desktop across the selected monitors. Left from 1P wraps to 16P; right from 16P wraps to 1P. With 16-player mode disabled, the loop ends at 8P. **Enable bots in 3+ players** controls the Grand Prix bot option. Use **C-right** to switch maps.
 
-Use **Wide screen preference** and **Racer render distance** in the same menu. Controller profiles are in the controller bindings window. The completion toggle is under **Enhancements → Cheats**. Use the normal **C-right** input to change the shared map display.
-
-During a 3–8 player Grand Prix, **Enhancements → Cheats → Skip to Grand Prix finale** opens the ceremony using current cup standings without modifying saved trophies.
-
-This repository contains source changes and the custom multiplayer menu texture. ROMs, extracted game archives, saves, and personal controller settings are not included. Supply your own supported US Mario Kart 64 dump, as described in the [upstream setup guide](docs/UPSTREAM-README.md).
+This repository contains source changes and custom artwork. ROMs, extracted game archives, saves, logs and personal controller settings are not included. Supply your own supported US Mario Kart 64 dump; see the [upstream setup guide](docs/UPSTREAM-README.md). Extended multiplayer remains experimental; the latest map/menu changes were compiled but have not had a fresh gameplay pass.
 
 ## Building
 

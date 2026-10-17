@@ -1,3 +1,4 @@
+#include <defines.h>
 #ifndef EFFECTS_H
 #define EFFECTS_H
 
@@ -140,7 +141,7 @@ extern f32 D_800E37B0[];
 extern f32 D_800E3790[];
 extern f32 D_800E37D0[];
 extern f32 D_800E37F0[];
-extern s16 D_80165190[8][8];
+extern s16 D_80165190[MAX_HUMAN_PLAYERS][NUM_RACERS];
 extern f32 gPlayerCurrentSpeed[];
 extern s32 gFrameSinceLastACombo[];
 

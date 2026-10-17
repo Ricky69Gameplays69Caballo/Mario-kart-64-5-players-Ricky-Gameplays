@@ -65,7 +65,7 @@ extern s32 D_800DC5E0;
 extern u16 D_800DC5E4;
 extern s32 gPlayerWinningIndex;
 
-extern ScreenContext gScreenContexts[8];
+extern ScreenContext gScreenContexts[MAX_HUMAN_PLAYERS];
 extern ScreenContext* gScreenOneCtx;
 extern ScreenContext* gScreenTwoCtx;
 extern ScreenContext* gScreenThreeCtx;

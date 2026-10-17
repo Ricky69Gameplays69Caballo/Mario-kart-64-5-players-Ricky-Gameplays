@@ -2,6 +2,7 @@
 #define BUFFERS_H
 
 #include <libultra/types.h>
+#include <defines.h>
 #include <mk64.h>
 #include <common_structs.h>
 
@@ -27,8 +28,8 @@ typedef struct {
  * The only way to unify those 2 things is to use a union
  */
 typedef union {
-    struct_D_802BFB80_4 arraySize4[2][8][4];
-    struct_D_802BFB80_8 arraySize8[2][8][8];
+    struct_D_802BFB80_4 arraySize4[2][MAX_HUMAN_PLAYERS][NUM_RACERS / 2];
+    struct_D_802BFB80_8 arraySize8[2][MAX_HUMAN_PLAYERS][NUM_RACERS];
 } union_D_802BFB80;
 
 /*
@@ -70,18 +71,18 @@ typedef struct {
 extern u16 gRandomSeed16;
 extern u8 randomSeedPadding[216];
 extern union_D_802BFB80 D_802BFB80;
-extern struct_D_802DFB80 gEncodedKartTexture[][8][8];
+extern struct_D_802DFB80 gEncodedKartTexture[][MAX_HUMAN_PLAYERS][NUM_RACERS];
 
 /**
- * It would be nice to define gPlayerPalettesList as "struct_D_802F1F80 gPlayerPalettesList[2][8][8]".
+ * It would be nice to define gPlayerPalettesList as "struct_D_802F1F80 gPlayerPalettesList[2][MAX_HUMAN_PLAYERS][NUM_RACERS]".
  * But due to register allocation issues in load_kart_palette / update_wheel_palette
  * we have to define it in a different manner to match those functions.
  * If AVOID_UB is defined, the struct is properly defined with their correct pointers.
  **/
 #ifdef AVOID_UB
-extern struct_D_802F1F80 gPlayerPalettesList[2][8][8];
+extern struct_D_802F1F80 gPlayerPalettesList[2][MAX_HUMAN_PLAYERS][NUM_RACERS];
 #else
-extern u16 gPlayerPalettesList[][8][0x100 * 8];
+extern u16 gPlayerPalettesList[][MAX_HUMAN_PLAYERS][0x100 * NUM_RACERS];
 #endif
 extern u16 gZBuffer[SCREEN_WIDTH * SCREEN_HEIGHT];
 

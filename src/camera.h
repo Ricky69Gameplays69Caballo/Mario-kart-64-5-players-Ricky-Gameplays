@@ -3,6 +3,7 @@
 
 #include <libultraship.h>
 #include <common_structs.h>
+#include <defines.h>
 
 /**
  * @todo put this define in types.h or similar.
@@ -17,7 +18,7 @@
 #define BAD_RETURN(cmd) cmd
 #endif
 
-#define NUM_CAMERAS 16
+#define NUM_CAMERAS (MAX_HUMAN_PLAYERS * 2 + 4)
 
 typedef enum RenderMode {
     RENDER_TRACK_SECTIONS,
@@ -102,7 +103,7 @@ extern Camera* gFreecamCamera;
 
 extern s8 D_80164A89;
 
-extern s32 D_80164A08[8];
+extern s32 D_80164A08[NUM_RACERS];
 
 extern s32 D_80164A28;
 extern s32 D_80164A2C;

@@ -8,12 +8,12 @@
  */
 ALIGNED8 union_D_802BFB80 D_802BFB80;
 // [nothing][screen][player]
-ALIGNED8 struct_D_802DFB80 gEncodedKartTexture[2][8][8];
+ALIGNED8 struct_D_802DFB80 gEncodedKartTexture[2][MAX_HUMAN_PLAYERS][NUM_RACERS];
 #ifdef AVOID_UB
 // [buffer][screen][player] Buffer might be two separate buffers or something?
-ALIGNED8 struct_D_802F1F80 gPlayerPalettesList[2][8][8];
+ALIGNED8 struct_D_802F1F80 gPlayerPalettesList[2][MAX_HUMAN_PLAYERS][NUM_RACERS];
 #else
-ALIGNED8 u16 gPlayerPalettesList[2][8][0x100 * 8];
+ALIGNED8 u16 gPlayerPalettesList[2][MAX_HUMAN_PLAYERS][0x100 * NUM_RACERS];
 #endif
 
 ALIGNED8 u16 gZBuffer[SCREEN_WIDTH * SCREEN_HEIGHT];

@@ -1,6 +1,7 @@
 #include "PortMenu.h"
 #include "UIWidgets.h"
 #include "port/Game.h"
+#include "port/CrashMonitor.h"
 #include "ship/window/gui/GuiMenuBar.h"
 #include "ship/window/gui/GuiElement.h"
 #include <variant>
@@ -10,6 +11,7 @@
 #include <tuple>
 #include "ResolutionEditor.h"
 #include "port/LocalMultiplayer.h"
+#include "port/MultiplayerDisplays.h"
 
 #include "engine/tracks/Track.h"
 #include "engine/tracks/KalimariDesert.h"
@@ -374,13 +376,42 @@ void PortMenu::AddMultiplayer() {
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "Adds 5P-8P choices to GAME SELECT: move right past 4P. Use the game controls to choose mode, class, characters and cup. "
             "F8 opens the optional PC lobby. Wide screen preference chooses who fills spare layout space."));
-    AddWidget(path, "Enable bots in 3 to 7 player grand prix", WIDGET_CVAR_CHECKBOX)
+    AddWidget(path, "Enable 16 players", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_MULTIPLAYER_SIXTEEN)
+        .PreFunc(outsideRace)
+        .Callback([](WidgetInfo&) { MultiplayerOptions_OnSixteenChanged(); })
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip(
+            "Adds playable 9P-16P choices after 8P in GAME SELECT. Up to 16 humans can race; "
+            "unused race slots are filled with CPU bots. Battle supports up to 16 humans, with no bots. Item boxes recover twice as fast in every mode. "
+            "Time Trials with bots do not save records or ghosts. Applies to a new race or cup."));
+    static const std::unordered_map<int32_t, const char*> displayOptions = {
+        {1, "1 screen"}, {2, "2 screens"}, {3, "3 screens"}
+    };
+    AddWidget(path, "Number of screens", WIDGET_CVAR_COMBOBOX)
+        .CVar(CVAR_MULTIPLAYER_SCREENS)
+        .PreFunc(outsideRace)
+        .Options(ComboboxOptions().ComboMap(displayOptions).DefaultIndex(1).Tooltip(
+            "At 16 humans: one screen uses 4 rows by 4 columns; two screens use 2 rows by 4 columns each; "
+            "three screens split players 6 / 5 / 5 in two rows per screen. "
+            "On Windows, the game window spans the selected extended-desktop monitors during races, "
+            "then returns to its previous size in the game menu. Configure Windows to extend these displays."));
+    AddWidget(path, "Display status", WIDGET_TEXT)
+        .PreFunc([](WidgetInfo& info) { info.name = MultiplayerDisplays_Status(); });
+    AddWidget(path, "Apply screen layout", WIDGET_BUTTON)
+        .Callback([](WidgetInfo&) { MultiplayerDisplays_Refresh(); })
+        .Options(ButtonOptions().Tooltip("Re-detect connected displays and apply the selected layout during a race."));
+    AddWidget(path, "Enable bots in 3+ players", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_MULTIPLAYER_BOTS)
         .PreFunc(outsideRace)
         .Callback([](WidgetInfo&) { MultiplayerOptions_OnBotsChanged(); })
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "Adds Grand Prix with bots to the normal 3/4-player menu. With Enable 8 players on, GP for 5-7 humans also fills the grid to eight. "
             "Changing this option returns to the main game menu. Both multiplayer options can be enabled together."));
+    AddWidget(path, "Enable race bomb karts (3+ players)", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_MULTIPLAYER_RACE_BOMBS)
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Turn the bomb-kart obstacles on race tracks on or off for three or more human players. "
+            "Applies immediately and is saved. Eliminated-player bombs in Battle are controlled by the normal Battle rules."));
     static const std::unordered_map<int32_t, const char*> widePlayerOptions = {
         {0, "Automatic (last player)"}, {1, "Player 1"}, {2, "Player 2"},
         {3, "Player 3"}, {4, "Player 4"}, {5, "Player 5"}, {6, "Player 6"},
@@ -389,12 +420,49 @@ void PortMenu::AddMultiplayer() {
     AddWidget(path, "Wide screen preference", WIDGET_CVAR_COMBOBOX)
         .CVar("gMultiplayer.WidePlayer")
         .Options(ComboboxOptions().ComboMap(widePlayerOptions).DefaultIndex(0).Tooltip(
-            "Choose who gets the wider bottom-row screen in 5, 7 or 8 player modes. "
+            "Choose who gets the wider bottom-row screen in 5 or 7 player modes. "
             "Swaps screen positions with the last player. Applies immediately and is saved. "
-            "An absent player falls back to the last player. Six-player mode has equal screens."));
-    AddWidget(path, "Both options are saved. Choose 3 or 4 players in the normal game menu for Grand Prix with bots. "
-                    "Move right past 4P in GAME SELECT for 5P-8P. With both options on, GP adds bots for 3-7 humans; VS stays human-only.", WIDGET_TEXT);
+            "An absent player falls back to the last player. Six- and eight-player modes have equal screens."));
+    AddWidget(path, "Options are saved. Move right past 4P in GAME SELECT for 5P-8P, then past 8P for 9P-16P. "
+                    "Enable 16 players supports up to 16 humans in Grand Prix and VS, with bots in unused slots. "
+                    "Battle keeps its current player count. With 16 players off, the Grand Prix bots option fills to eight.", WIDGET_TEXT);
     AddWidget(path, "Visibility", WIDGET_SEPARATOR_TEXT);
+    const auto minimapNumberEntry = [](WidgetInfo& info) {
+        const auto options = std::static_pointer_cast<IntSliderOptions>(info.options);
+        struct NumericState { int value = 0; bool editing = false; };
+        static std::unordered_map<std::string, NumericState> states;
+        auto& state = states[info.cVar];
+        if (!state.editing) state.value = CVarGetInteger(info.cVar, options->defaultValue);
+        ImGui::PushID(info.cVar);
+        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 8.f);
+        ImGui::InputInt("Numeric value (%)", &state.value, 0, 0);
+        const bool active = ImGui::IsItemActive();
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            state.value = std::clamp(state.value, options->min, options->max);
+            CVarSetInteger(info.cVar, state.value);
+            Ship::Context::GetRawInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+        }
+        state.editing = active;
+        ImGui::PopID();
+    };
+    AddWidget(path, "Minimap size: %d%%", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_MINIMAP_SIZE)
+        .Options(IntSliderOptions().Min(10).Max(300).Step(5).DefaultValue(100).Tooltip(
+            "Scale the course/arena minimap and its player markers. 100% keeps the normal size. "
+            "Drag the slider or type a percentage below, then press Enter or click away. Applies immediately and is saved."))
+        .PreFunc([](WidgetInfo& info) {
+            std::static_pointer_cast<IntSliderOptions>(info.options)->flags = ImGuiSliderFlags_AlwaysClamp;
+        })
+        .PostFunc(minimapNumberEntry);
+    AddWidget(path, "Minimap transparency: %d%%", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_MINIMAP_TRANSPARENCY)
+        .Options(IntSliderOptions().Min(0).Max(100).Step(5).DefaultValue(0).Tooltip(
+            "Fade the entire course/arena minimap, including player markers and finish line. "
+            "0% is opaque; 100% hides it. Drag the slider or enter a percentage below. Applies immediately and is saved."))
+        .PreFunc([](WidgetInfo& info) {
+            std::static_pointer_cast<IntSliderOptions>(info.options)->flags = ImGuiSliderFlags_AlwaysClamp;
+        })
+        .PostFunc(minimapNumberEntry);
     AddWidget(path, "Racer render distance: %dx", WIDGET_CVAR_SLIDER_INT)
         .CVar(CVAR_RACER_RENDER_DISTANCE)
         .Options(IntSliderOptions().Min(1).Max(5).Step(1).DefaultValue(2).Tooltip(
@@ -402,6 +470,27 @@ void PortMenu::AddMultiplayer() {
             "2x-5x extend the range and prevent early culling at wide screen edges. "
             "Applies immediately to Grand Prix, VS and Battle for any player count, and is saved. "
             "Higher settings can reduce performance. Track scenery keeps its normal visibility rules."));
+#ifdef _WIN32
+    AddSidebarEntry("Multiplayer", "Diagnostics", 1);
+    path = { "Multiplayer", "Diagnostics", SECTION_COLUMN_1 };
+    AddWidget(path, "Detailed crash logging", WIDGET_CVAR_CHECKBOX)
+        .CVar("gDiagnostics.DetailedCrashLogging")
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip(
+            "Records race state every quarter second and starts a separate Windows crash monitor. "
+            "Captures thread stacks and memory even for failures that bypass the game's crash handler. "
+            "Applies immediately and is saved. Turn it off after reproducing the crash."));
+    AddWidget(path, "Enable this before starting the race, then reproduce the crash. "
+                    "Reports, memory dumps and race snapshots are saved in the game's logs folder. "
+                    "The game may pause briefly while the crash dump is written.", WIDGET_TEXT);
+    AddWidget(path, "Crash monitor status", WIDGET_TEXT)
+        .PreFunc([](WidgetInfo& info) { info.name = CrashMonitor_Status(); });
+    AddWidget(path, "Open crash logs folder", WIDGET_BUTTON)
+        .Callback([](WidgetInfo&) {
+            const auto directory = std::filesystem::absolute(Ship::Context::GetPathRelativeToAppDirectory("logs"));
+            SDL_OpenURL(std::string("file:///" + directory.string()).c_str());
+        })
+        .Options(ButtonOptions().Size(Sizes::Inline));
+#endif
 }
 
 void PortMenu::AddEnhancements() {
@@ -463,12 +552,12 @@ void PortMenu::AddEnhancements() {
     AddWidget(path, "Skip to Grand Prix finale", WIDGET_BUTTON)
         .PreFunc([](WidgetInfo& info) {
             info.options->disabled = !LocalMP_CanSkipGrandPrixFinale();
-            info.options->disabledTooltip = "Start a Grand Prix with 3 to 8 human players first.";
+            info.options->disabledTooltip = "Start a Grand Prix with 3 to 16 human players first.";
         })
         .Callback([](WidgetInfo&) { LocalMP_SkipGrandPrixFinale(); })
         .Options(ButtonOptions().Tooltip(
             "Skip directly to the award ceremony using current cup points. Equal points use controller order. "
-            "Works in 3-8 player Grand Prix, with or without bots. Does not award saved trophies."));
+            "Works in 3-16 player Grand Prix, with or without bots. Does not award saved trophies."));
     AddWidget(path, "All tracks completed", WIDGET_CVAR_CHECKBOX)
         .CVar("gAllTracksCompleted")
         .Options(CheckboxOptions().Tooltip(

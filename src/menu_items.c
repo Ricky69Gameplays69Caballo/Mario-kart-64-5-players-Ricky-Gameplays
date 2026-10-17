@@ -2,6 +2,7 @@
 #include <libultra/types.h>
 #include <macros.h>
 #include <string.h>
+#include <math.h>
 #include <mk64.h>
 #include <stubs.h>
 #include <defines.h>
@@ -69,14 +70,14 @@ void* gSomeDLBuffer;
  * has scored
  */
 s8 gGPPointsByCharacterId[8];
-s8 gCharacterIdByGPOverallRank[8];
+s8 gCharacterIdByGPOverallRank[NUM_RACERS];
 s8 D_8018D9D8;
 s8 D_8018D9D9;
 MenuItem gMenuItems[MENU_ITEMS_MAX];
 struct_8018DEE0_entry D_8018DEE0[D_8018DEE0_SIZE];
 static MenuItem sExpandedCharacterPortraits[8];
 static bool sExpandedCharacterPortraitsLoaded = false;
-static MenuItem sExpandedBattlePortraits[8];
+static MenuItem sExpandedBattlePortraits[MAX_HUMAN_PLAYERS];
 static bool sExpandedBattlePortraitsLoaded = false;
 struct_8018E060_entry D_8018E060[D_8018E060_SIZE + 1];
 struct_8018E0E8_entry D_8018E0E8[D_8018E0E8_SIZE];
@@ -92,10 +93,10 @@ u32 gTransitionDuration[5];
 u32 gCurrentTransitionTime[5];
 struct UnkStruct_8018E7E8 D_8018E7E8[D_8018E7E8_SIZE];
 struct UnkStruct_8018E7E8 D_8018E810[D_8018E810_SIZE];
-s8 D_8018E838[4]; // Import to C was required for matching.
+s8 D_8018E838[MAX_HUMAN_PLAYERS]; // Import to C was required for matching.
 s32 D_8018E83C;
 
-s32 D_8018E840[4]; // This may all be one big array.
+s32 D_8018E840[MAX_HUMAN_PLAYERS]; // This may all be one big array.
 s32 D_8018E850[2]; // This is probably incorrect. Fix after decomping code.
 s32 D_8018E858[2];
 s8 gTextColor;
@@ -2618,7 +2619,8 @@ void func_80094A64(UNUSED struct GfxPool* pool) {
 }
 
 void MultiplayerOptions_UpdateMenus(void) {
-    const bool grandPrix = MultiplayerOptions_BotsEnabled() || MultiplayerOptions_EightEnabled();
+    const bool grandPrix = MultiplayerOptions_BotsEnabled() || MultiplayerOptions_EightEnabled() ||
+                          MultiplayerOptions_SixteenEnabled();
     static MenuTexture threePlayerGrandPrixColumn[5];
     static MenuTexture fourPlayerGrandPrixColumn[5];
     static s32 previous = -1;
@@ -3042,14 +3044,9 @@ void func_80095AE0(MTX_TYPE* arg0, f32 arg1, f32 arg2, f32 arg3, f32 arg4) {
 
 Gfx* func_80095BD0(Gfx* displayListHead, u8* arg1, f32 arg2, f32 arg3, u32 arg4, u32 arg5, f32 arg6, f32 arg7) {
     Vtx* var_a1;
-    // A match is a match, but why are goto's required here?
-    if (gMatrixEffectCount >= 0x2F7) {
-        rmonPrintf("MAX effectcount(760) over!!!!(kawano)\n");
-        return displayListHead;
-    }
-    if (gMatrixEffectCount < 0) {
-        rmonPrintf("effectcount < 0 !!!!!!(kawano)\n");
-    }
+    // Text uses AddTextMatrix's dynamic PC matrix pool, not the original
+    // 760-entry N64 effect buffer. The world-effect counter can exceed that
+    // old capacity with 16 racers' balloons and must not suppress UI glyphs.
     FrameInterpolation_RecordOpenChild("flashing_text", TAG_LETTER((uintptr_t) &arg1 << 8) + (arg4 + arg5));
     Mat4 mf;
     SetTextMatrix(mf, arg2, arg3, arg6, arg7);
@@ -3083,15 +3080,9 @@ Gfx* func_80095BD0(Gfx* displayListHead, u8* arg1, f32 arg2, f32 arg3, u32 arg4,
 Gfx* func_80095BD0_wide_right(Gfx* displayListHead, u8* arg1, f32 arg2, f32 arg3, u32 arg4, u32 arg5, f32 arg6,
                               f32 arg7) {
     Vtx* var_a1;
-    // A match is a match, but why are goto's required here?
-    if (gMatrixEffectCount >= 0x2F7) {
-        rmonPrintf("func_80095BD0_wide_right: MAX effectcount(760) over!!!!(kawano)\n");
-        return displayListHead;
-    }
-    if (gMatrixEffectCount < 0) {
-        rmonPrintf("func_80095BD0_wide_right: effectcount < 0 !!!!!!(kawano)\n");
-    }
-
+    // Text uses AddTextMatrix's dynamic PC matrix pool, not the original
+    // 760-entry N64 effect buffer. The world-effect counter can exceed that
+    // old capacity with 16 racers' balloons and must not suppress UI glyphs.
     FrameInterpolation_RecordOpenChild("flashing_text_wide_right", TAG_LETTER((uintptr_t) &arg1 << 8) + (arg4 + arg5));
     Mat4 mf;
     SetTextMatrix(mf, OTRGetDimensionFromRightEdge(arg2), arg3, arg6, arg7);
@@ -4616,68 +4607,53 @@ static void draw_expanded_portrait_mist(s32 x, s32 y, const u8* color, f32 scale
                                    (u8*)mist->textureData, mist->width, mist->height);
 }
 
-static void draw_expanded_player_cursor(MenuItem* item, s32 player, bool confirmed) {
-    const s32 phase = gGlobalTimer % 16;
-    const s32 shade = confirmed ? 191 + (phase < 8 ? phase : 16 - phase) * 8 : 255;
-    if (player < 4) {
-        render_cursor_player(item, player, shade);
-        return;
-    }
-    // Additional markers use the same square frame, diagonal corner, and
-    // white pixel digits as the original four cursors, with distinct colors.
-    static const u8 colors[4][3] = {{255, 0, 192}, {0, 208, 255}, {160, 80, 255}, {224, 224, 224}};
-    static const u8 digits[4][7] = {
-        {31, 16, 30, 1, 1, 17, 14}, {14, 16, 16, 30, 17, 17, 14},
-        {31, 1, 2, 4, 8, 8, 8}, {14, 17, 17, 14, 17, 17, 14}
+static const u8 sExtraPlayerColors[12][3] = {
+    {255,0,192}, {0,208,255}, {160,80,255}, {224,224,224},
+    {255,128,160}, {128,240,96}, {255,208,80}, {48,128,224},
+    {208,96,48}, {96,224,176}, {192,144,240}, {160,176,208}
+};
+static void draw_player_number(s32 x, s32 y, s32 player, s32 scale, s32 shade) {
+    static const u8 digits[10][7] = {
+        {14,17,19,21,25,17,14}, {4,12,4,4,4,4,14}, {14,17,1,2,4,8,31},
+        {30,1,1,14,1,1,30}, {2,6,10,18,31,2,2}, {31,16,30,1,1,17,14},
+        {14,16,16,30,17,17,14}, {31,1,2,4,8,8,8}, {14,17,17,14,17,17,14}, {14,17,17,15,1,1,14}
     };
-    const u8* color = colors[player - 4];
-    const s32 x = item->column, y = item->row;
-    draw_expanded_portrait_mist(x, y, color, 1.0f);
-    gDisplayListHead = draw_box_fill(gDisplayListHead, x, y, x + 63, y + 1, color[0], color[1], color[2], 255);
-    gDisplayListHead = draw_box_fill(gDisplayListHead, x, y + 62, x + 63, y + 63, color[0], color[1], color[2], 255);
-    gDisplayListHead = draw_box_fill(gDisplayListHead, x, y, x + 1, y + 63, color[0], color[1], color[2], 255);
-    gDisplayListHead = draw_box_fill(gDisplayListHead, x + 62, y, x + 63, y + 63, color[0], color[1], color[2], 255);
-    for (s32 line = 0; line < 28; ++line) {
-        gDisplayListHead = draw_box_fill(gDisplayListHead, x, y + 36 + line, x + line, y + 36 + line,
-                                        color[0], color[1], color[2], 255);
-    }
-    for (s32 pass = 0; pass < 2; ++pass) {
-        for (s32 row = 0; row < 7; ++row) {
-            for (s32 column = 0; column < 5; ++column) {
-                if (digits[player - 4][row] & (16 >> column)) {
-                    const s32 px = x + 4 + column * 2 + (pass == 0 ? 1 : 0);
-                    const s32 py = y + 46 + row * 2 + (pass == 0 ? 1 : 0);
-                    const s32 value = pass == 0 ? 0 : shade;
-                    gDisplayListHead = draw_box_fill(gDisplayListHead, px, py, px + 1, py + 1, value, value, value, 255);
-                }
+    const s32 number = player + 1;
+    const s32 count = number >= 10 ? 2 : 1;
+    for (s32 digit = 0; digit < count; ++digit) {
+        const s32 value = count == 2 && digit == 0 ? number / 10 : number % 10;
+        for (s32 row = 0; row < 7; ++row) for (s32 col = 0; col < 5; ++col) {
+            if (digits[value][row] & (16 >> col)) {
+                const s32 px=x+(digit*6+col)*scale, py=y+row*scale;
+                gDisplayListHead=draw_box_fill(gDisplayListHead,px,py,px+scale-1,py+scale-1,shade,shade,shade,255);
             }
         }
     }
 }
-
+static void draw_expanded_player_cursor(MenuItem* item, s32 player, bool confirmed) {
+    const s32 phase = gGlobalTimer % 16;
+    const s32 shade = confirmed ? 191 + (phase < 8 ? phase : 16 - phase) * 8 : 255;
+    if (player < 4) { render_cursor_player(item, player, shade); return; }
+    const u8* color=sExtraPlayerColors[player-4];
+    const s32 x=item->column, y=item->row;
+    draw_expanded_portrait_mist(x,y,color,1.0f);
+    gDisplayListHead=draw_box_fill(gDisplayListHead,x,y,x+63,y+1,color[0],color[1],color[2],255);
+    gDisplayListHead=draw_box_fill(gDisplayListHead,x,y+62,x+63,y+63,color[0],color[1],color[2],255);
+    gDisplayListHead=draw_box_fill(gDisplayListHead,x,y,x+1,y+63,color[0],color[1],color[2],255);
+    gDisplayListHead=draw_box_fill(gDisplayListHead,x+62,y,x+63,y+63,color[0],color[1],color[2],255);
+    for (s32 line=0; line<28; ++line)
+        gDisplayListHead=draw_box_fill(gDisplayListHead,x,y+36+line,x+line,y+36+line,color[0],color[1],color[2],255);
+    draw_player_number(x+5,y+47,player,2,0);
+    draw_player_number(x+4,y+46,player,2,shade);
+}
 static void draw_shared_character_player_tag(s32 x, s32 y, s32 player, bool confirmed) {
-    static const u8 extraColors[4][3] = {{255, 0, 192}, {0, 208, 255}, {160, 80, 255}, {224, 224, 224}};
-    static const u8 digits[8][7] = {
-        {4, 12, 4, 4, 4, 4, 14}, {14, 17, 1, 2, 4, 8, 31},
-        {30, 1, 1, 14, 1, 1, 30}, {2, 6, 10, 18, 31, 2, 2},
-        {31, 16, 30, 1, 1, 17, 14}, {14, 16, 16, 30, 17, 17, 14},
-        {31, 1, 2, 4, 8, 8, 8}, {14, 17, 17, 14, 17, 17, 14}
-    };
-    const s32 red = player < 4 ? D_800E74A8[player].red : extraColors[player - 4][0];
-    const s32 green = player < 4 ? D_800E74A8[player].green : extraColors[player - 4][1];
-    const s32 blue = player < 4 ? D_800E74A8[player].blue : extraColors[player - 4][2];
-    gDisplayListHead = draw_box_fill(gDisplayListHead, x, y, x + 13, y + 9, red, green, blue, 255);
-    gDisplayListHead = draw_box_fill(gDisplayListHead, x + 1, y + 1, x + 12, y + 8, 0, 0, 0, 255);
-    // Readiness belongs to each player, even on a shared portrait.
-    if (confirmed) gDisplayListHead = draw_box_fill(gDisplayListHead, x + 10, y + 3, x + 11, y + 6, 255, 255, 255, 255);
-    for (s32 row = 0; row < 7; ++row) {
-        for (s32 column = 0; column < 5; ++column) {
-            if (digits[player][row] & (16 >> column)) {
-                const s32 px = x + 3 + column, py = y + 1 + row;
-                gDisplayListHead = draw_box_fill(gDisplayListHead, px, py, px, py, 255, 255, 255, 255);
-            }
-        }
-    }
+    const s32 red=player<4?D_800E74A8[player].red:sExtraPlayerColors[player-4][0];
+    const s32 green=player<4?D_800E74A8[player].green:sExtraPlayerColors[player-4][1];
+    const s32 blue=player<4?D_800E74A8[player].blue:sExtraPlayerColors[player-4][2];
+    gDisplayListHead=draw_box_fill(gDisplayListHead,x,y,x+13,y+9,red,green,blue,255);
+    gDisplayListHead=draw_box_fill(gDisplayListHead,x+1,y+1,x+12,y+8,0,0,0,255);
+    draw_player_number(x+(player>=9?1:3),y+1,player,1,255);
+    if (confirmed) gDisplayListHead=draw_box_fill(gDisplayListHead,x+12,y+1,x+12,y+8,255,255,255,255);
 }
 
 void draw_expanded_character_select(const s32* characters, const u8* ready, s32 count, s32 allReady) {
@@ -4707,7 +4683,7 @@ void draw_expanded_character_select(const s32* characters, const u8* ready, s32 
     gDisplayListHead = render_menu_textures(gDisplayListHead, D_02004B4C, 0, 0);
     for (s32 grid = 0; grid < 8; ++grid) {
         MenuItem* item = &sExpandedCharacterPortraits[grid];
-        s32 owners[8];
+        s32 owners[MAX_HUMAN_PLAYERS];
         s32 ownerCount = 0;
         bool anyConfirmed = false;
         for (s32 player = 0; player < count; ++player) {
@@ -4724,7 +4700,7 @@ void draw_expanded_character_select(const s32* characters, const u8* ready, s32 
             // Show every player number instead of stacking opaque cursor corners.
             for (s32 i = 0; i < ownerCount; ++i) {
                 draw_shared_character_player_tag(item->column + 3 + (i % 4) * 14,
-                                                  item->row + 42 + (i / 4) * 10,
+                                                  item->row + 24 + (i / 4) * 10,
                                                   owners[i], ready[owners[i]]);
             }
         }
@@ -4738,8 +4714,80 @@ void draw_expanded_character_select(const s32* characters, const u8* ready, s32 
     func_80099AEC();
 }
 
-static void draw_battle_texture_scaled(MenuTexture* texture, s32 x, s32 y) {
-    const f32 scale = 0.75f;
+void draw_expanded_race_results(const ExpandedRaceResultRow* rows, s32 count, s32 humans,
+                                s32 mode, s32 standings, s32 round, s32 totalRounds,
+                                s32 cupComplete, s32 choice, s32 engineClass, MenuItem* cursor) {
+    const s32 columns = count > 8 ? 2 : 1;
+    const s32 rowsPerColumn = (count + columns - 1) / columns;
+    const f32 scale = columns == 2 ? 0.43f : 0.65f;
+    bool estimated = false;
+    char text[64];
+    // Use the native ranking typography and full-screen shading over the
+    // winning human's camera, rather than a desktop window over split screens.
+    gDisplayListHead = draw_box_wide(gDisplayListHead, 0, 0, 319, 239, 0, 0, 0, 130);
+    set_text_color(TEXT_BLUE_GREEN_RED_CYCLE_1);
+    print_text1_center_mode_1(160, 24, standings ? (cupComplete ? "FINAL DRIVER'S POINTS" : "driver's points") :
+        mode == 1 ? D_800E7778[0] : "race ranking", 0, 0.8f, 0.8f);
+    set_text_color(TEXT_BLUE_GREEN_RED_CYCLE_2);
+    if (mode == 0) {
+        snprintf(text, sizeof(text), "%s   %s   ROUND %d OF %d", GetCupName(),
+                 D_800E76CC[engineClass], round, totalRounds);
+        print_text1_center_mode_1(160, 39, text, 0, 0.4f, 0.4f);
+    } else {
+        print_text1_center_mode_1(160, 39, CM_GetProps()->Name, 0, 0.45f, 0.45f);
+    }
+    for (s32 column = 0; column < columns; ++column) {
+        const s32 x = columns == 2 ? 12 + column * 156 : 38;
+        const s32 nameX = x + (columns == 2 ? 44 : 66);
+        const s32 valueX = x + (columns == 2 ? 96 : 169);
+        set_text_color(TEXT_BLUE_GREEN_RED_CYCLE_2);
+        print_text_mode_1(nameX, 55, "DRIVER", 0, scale, scale);
+        print_text_mode_1(valueX, 55, standings ? "PTS + GAIN" : mode == 1 ? "WINS" : "TIME", 0, scale, scale);
+        for (s32 row = 0; row < rowsPerColumn; ++row) {
+            const s32 index = column * rowsPerColumn + row;
+            if (index >= count) break;
+            const ExpandedRaceResultRow* result = &rows[index];
+            const s32 y = 71 + row * 15;
+            set_text_color(result->player < humans ? gGlobalTimer % 3 : TEXT_YELLOW);
+            snprintf(text, sizeof(text), "%d.", result->place);
+            func_800939C8(x, y, text, -2, scale, scale);
+            snprintf(text, sizeof(text), "%s%d", result->player < humans ? "P" : "CPU",
+                     result->player < humans ? result->player + 1 : result->player - humans + 1);
+            print_text_mode_1(x + (columns == 2 ? 18 : 26), y, text, 0,
+                              columns == 2 ? 0.30f : 0.4f, scale);
+            print_text_mode_1(nameX, y, D_800E76A8[result->character], 0, scale, scale);
+            if (standings) {
+                snprintf(text, sizeof(text), "%02d  +%d", result->points, result->reward);
+            } else if (mode == 1) {
+                snprintf(text, sizeof(text), "%02d", result->points);
+            } else if (!result->finished || !isfinite(result->time) || result->time < 0) {
+                snprintf(text, sizeof(text), "DNF");
+            } else {
+                const s32 centiseconds = (s32)(result->time * 100.0f);
+                snprintf(text, sizeof(text), "%02d'%02d\"%02d%s", centiseconds / 6000,
+                         (centiseconds / 100) % 60, centiseconds % 100, result->estimated ? "*" : "");
+                estimated |= result->estimated != 0;
+            }
+            print_text_mode_1(valueX, y, text, -1, scale, scale);
+        }
+    }
+    set_text_color(TEXT_YELLOW);
+    if (estimated && !standings)
+        print_text1_center_mode_1(160, 186, "* CPU TIMES ESTIMATED", 0, 0.32f, 0.32f);
+    const char* next = mode == 0 ? (standings ? (cupComplete ? "VIEW CEREMONY" : "NEXT RACE") :
+                                 "DRIVER'S POINTS") : "RETRY";
+    text_rainbow_effect(choice, 0, TEXT_GREEN);
+    print_text_mode_1(101, 207, (char*)next, 0, 0.6f, 0.6f);
+    text_rainbow_effect(choice, 1, TEXT_GREEN);
+    print_text_mode_1(101, 222, "QUIT", 0, 0.6f, 0.6f);
+    Unk_D_800E70A0 position = {88, 199 + choice * 15, 0, 0};
+    pause_menu_item_box_cursor(cursor, &position);
+    set_text_color(TEXT_YELLOW);
+    print_text1_center_mode_1(160, 238, mode == 0 ?
+        "LEFT-RIGHT  RESULTS-POINTS    A SELECT    B BACK" : "A SELECT    B BACK", 0, 0.28f, 0.28f);
+}
+
+static void draw_battle_texture_scaled(MenuTexture* texture, s32 x, s32 y, f32 scale) {
     for (; texture->textureData != NULL; ++texture) {
         const s32 format = texture->type == 3 ? 3 : 0;
         Gfx* setup = texture->type == 0 ? D_02007708 : texture->type == 2 ? D_02007748 :
@@ -4754,20 +4802,36 @@ static void draw_battle_texture_scaled(MenuTexture* texture, s32 x, s32 y) {
 
 void draw_expanded_battle_results(const s32* characters, const s32* wins, s32 count,
                                   s32 winner, s32 choice, MenuItem* cursor) {
-    static const u8 extraColors[4][3] = {{255, 0, 192}, {0, 208, 255}, {160, 80, 255}, {224, 224, 224}};
-    static const u8 extraDigits[4][7] = {
-        {31, 16, 30, 1, 1, 17, 14}, {14, 16, 16, 30, 17, 17, 14},
-        {31, 1, 2, 4, 8, 8, 8}, {14, 17, 17, 14, 17, 17, 14}
-    };
+    if (count < 2 || count > MAX_HUMAN_PLAYERS) return;
+    const bool compact = count > 8;
+    const f32 portraitScale = compact ? 0.375f : 0.75f;
+    const f32 layoutScale = portraitScale / 0.75f;
+    const s32 portraitSize = compact ? 24 : 48;
     if (!sExpandedBattlePortraitsLoaded) {
         s32 freeSlots = 0;
         for (s32 i = 0; i < D_8018DEE0_SIZE; ++i) freeSlots += D_8018DEE0[i].visible == 0;
-        if (freeSlots < count) return; // The native allocator otherwise loops forever.
+        s32 neededSlots = 0;
+        for (s32 player = 0; player < count; ++player) {
+            bool shared = false;
+            for (s32 earlier = 0; earlier < player; ++earlier)
+                if (characters[earlier] == characters[player] && (earlier == winner) == (player == winner)) shared = true;
+            neededSlots += !shared;
+        }
+        if (freeSlots < neededSlots) return; // The native allocator otherwise loops forever.
         for (s32 player = 0; player < count; ++player) {
             const s32 grid = D_800EFD64[characters[player]];
             MenuItem* portrait = &sExpandedBattlePortraits[player];
             memset(portrait, 0, sizeof(*portrait));
-            portrait->D_8018DEE0_index = animate_character_select_menu(player == winner ?
+            // Repeated characters share defeat animations; the winner keeps a
+            // separate celebration. Sixteen cards need at most nine slots.
+            s32 shared = -1;
+            for (s32 earlier = 0; earlier < player; ++earlier) {
+                if (characters[earlier] == characters[player] && (earlier == winner) == (player == winner)) {
+                    shared = sExpandedBattlePortraits[earlier].D_8018DEE0_index;
+                    break;
+                }
+            }
+            portrait->D_8018DEE0_index = shared >= 0 ? shared : animate_character_select_menu(player == winner ?
                 gCharacterCelebrateAnimation[grid] : gCharacterDefeatAnimation[grid]);
             load_menu_img_comp_type(D_800E7D54[grid], LOAD_MENU_IMG_TKMK00_ONCE);
             if (player < 4) load_menu_img(gMenuTexturesBorderPlayer[player]);
@@ -4777,11 +4841,13 @@ void draw_expanded_battle_results(const s32* characters, const s32* wins, s32 co
     gDisplayListHead = draw_box_wide(gDisplayListHead, 0, 0, 319, 239, 0, 0, 0, 100);
     set_text_color(TEXT_BLUE_GREEN_RED_CYCLE_2);
     print_text1_center_mode_1(160, 22, D_800E7778[1], 0, 0.85f, 0.85f);
+    MenuTexture* frames[D_8018DEE0_SIZE] = {0};
     for (s32 player = 0; player < count; ++player) {
         const s32 grid = D_800EFD64[characters[player]];
-        const s32 rowCount = player < 4 ? 4 : count - 4;
-        const s32 x = (320 - (rowCount - 1) * 70 - 48) / 2 + (player % 4) * 70;
-        const s32 y = player < 4 ? 31 : 107;
+        const s32 rowStart = (player / 4) * 4;
+        const s32 rowCount = MIN(4, count - rowStart);
+        const s32 x = (320 - (rowCount - 1) * 70 - portraitSize) / 2 + (player % 4) * 70;
+        const s32 y = 31 + (player / 4) * (compact ? 39 : 76);
         MenuItem* portrait = &sExpandedBattlePortraits[player];
         struct_8018DEE0_entry* animation = &D_8018DEE0[portrait->D_8018DEE0_index];
         if (player == winner && portrait->subState == 0 && animation->sequenceIndex >= D_800E8440[grid]) {
@@ -4789,32 +4855,32 @@ void draw_expanded_battle_results(const s32* characters, const s32* wins, s32 co
             func_8009A594(portrait->D_8018DEE0_index, 0, D_800E83A0[grid]);
         }
         // Name bars and victory/defeat portraits are the original battle assets.
-        draw_battle_texture_scaled(D_800E7D54[grid], x, y);
-        draw_battle_texture_scaled(func_8009A878(animation), x, y);
+        draw_battle_texture_scaled(D_800E7D54[grid], x, y, portraitScale);
+        if (!frames[portrait->D_8018DEE0_index])
+            frames[portrait->D_8018DEE0_index] = func_8009A878(animation);
+        draw_battle_texture_scaled(frames[portrait->D_8018DEE0_index], x, y, portraitScale);
         if (player < 4) {
             RGBA16* color = &D_800E74A8[player];
             gDPSetPrimColor(gDisplayListHead++, 0, 0, color->red, color->green, color->blue, color->alpha);
             gDPSetEnvColor(gDisplayListHead++, 255, 255, 255, 0);
-            draw_battle_texture_scaled(gMenuTexturesBorderPlayer[player], x, y);
+            draw_battle_texture_scaled(gMenuTexturesBorderPlayer[player], x, y, portraitScale);
         } else {
-            const u8* color = extraColors[player - 4];
-            draw_expanded_portrait_mist(x, y, color, 0.75f);
-            gDisplayListHead = draw_box_fill(gDisplayListHead, x, y, x + 47, y + 1, color[0], color[1], color[2], 255);
-            gDisplayListHead = draw_box_fill(gDisplayListHead, x, y + 46, x + 47, y + 47, color[0], color[1], color[2], 255);
-            gDisplayListHead = draw_box_fill(gDisplayListHead, x, y, x + 1, y + 47, color[0], color[1], color[2], 255);
-            gDisplayListHead = draw_box_fill(gDisplayListHead, x + 46, y, x + 47, y + 47, color[0], color[1], color[2], 255);
-            for (s32 line = 0; line < 21; ++line)
-                gDisplayListHead = draw_box_fill(gDisplayListHead, x, y + 27 + line, x + line, y + 27 + line,
+            const u8* color = sExtraPlayerColors[player - 4];
+            const s32 edge = portraitSize - 1;
+            const s32 border = compact ? 0 : 1;
+            draw_expanded_portrait_mist(x, y, color, portraitScale);
+            gDisplayListHead = draw_box_fill(gDisplayListHead, x, y, x + edge, y + border, color[0], color[1], color[2], 255);
+            gDisplayListHead = draw_box_fill(gDisplayListHead, x, y + edge - border, x + edge, y + edge, color[0], color[1], color[2], 255);
+            gDisplayListHead = draw_box_fill(gDisplayListHead, x, y, x + border, y + edge, color[0], color[1], color[2], 255);
+            gDisplayListHead = draw_box_fill(gDisplayListHead, x + edge - border, y, x + edge, y + edge, color[0], color[1], color[2], 255);
+            for (s32 line = 0; line < (s32)(21 * layoutScale); ++line)
+                gDisplayListHead = draw_box_fill(gDisplayListHead, x, y + (s32)(27 * layoutScale) + line,
+                                                x + line, y + (s32)(27 * layoutScale) + line,
                                                 color[0], color[1], color[2], 255);
-            for (s32 line = 0; line < 7; ++line) {
-                for (s32 column = 0; column < 5; ++column) {
-                    if (extraDigits[player - 4][line] & (16 >> column)) {
-                        const s32 px = x + 3 + column * 2, py = y + 32 + line * 2;
-                        gDisplayListHead = draw_box_fill(gDisplayListHead, px + 1, py + 1, px + 2, py + 2, 0, 0, 0, 255);
-                        gDisplayListHead = draw_box_fill(gDisplayListHead, px, py, px + 1, py + 1, 255, 255, 255, 255);
-                    }
-                }
-            }
+            const s32 digitScale = compact ? 1 : 2;
+            const s32 digitY = y + (s32)(32 * layoutScale);
+            draw_player_number(x + 3, digitY + 1, player, digitScale, 0);
+            draw_player_number(x + 2, digitY, player, digitScale, 255);
         }
         char score[16];
         snprintf(score, sizeof(score), "%02d", wins[player]);
@@ -4826,9 +4892,9 @@ void draw_expanded_battle_results(const s32* characters, const s32* wins, s32 co
             nativeScore[digit * 2 + 1] = 0xB0 + score[digit] - '0';
         }
         nativeScore[digits * 2] = 0;
-        const f32 scoreScale = wins[player] < 100 ? 0.55f : 0.4f;
+        const f32 scoreScale = (wins[player] < 100 ? 0.55f : 0.4f) * layoutScale;
         set_text_color(player == winner ? gGlobalTimer % 3 : TEXT_BLUE);
-        print_text1_center_mode_2(x + 24, y + 75, nativeScore, 0, scoreScale, scoreScale);
+        print_text1_center_mode_2(x + portraitSize / 2, y + (s32)(75 * layoutScale), nativeScore, 0, scoreScale, scoreScale);
     }
     for (s32 option = 0; option < 4; ++option) {
         text_rainbow_effect(choice, option, TEXT_GREEN);
@@ -6247,6 +6313,7 @@ void func_8009E280(void) {
 }
 
 void func_8009E2A8(s32 arg0) {
+    if (arg0 < 0 || arg0 >= MAX_HUMAN_PLAYERS) return;
     switch (D_8018E838[arg0]) {
         case 0:
             break;
@@ -6271,8 +6338,19 @@ void func_8009E2F0(s32 arg0) {
 
     temp_t7 = D_800F0B28[D_8018E840[arg0]];
     if (temp_t7 != 0) {
-        temp_t1 = &D_8018E7E8[arg0];
-        temp_t0 = &D_8018E810[arg0];
+        struct UnkStruct_8018E7E8 localStart, localSize;
+        if (LocalMP_IsActive()) {
+            // Expanded viewports are not stored in the five-entry transition tables.
+            localStart.x = gScreenContexts[arg0].screenStartX;
+            localStart.y = gScreenContexts[arg0].screenStartY;
+            localSize.x = gScreenContexts[arg0].screenWidth;
+            localSize.y = gScreenContexts[arg0].screenHeight;
+            temp_t1 = &localStart;
+            temp_t0 = &localSize;
+        } else {
+            temp_t1 = &D_8018E7E8[arg0];
+            temp_t0 = &D_8018E810[arg0];
+        }
         temp_v0 = &D_800E7AC8[temp_t7];
         if ((u32) D_8018E840[arg0] < 0x1BU) {
             gDisplayListHead =
@@ -6289,6 +6367,7 @@ void func_8009E2F0(s32 arg0) {
     }
     D_8018E840[arg0]++;
     if ((u32) D_8018E840[arg0] >= 0x26U) {
+        if (LocalMP_IsActive()) { D_8018E838[arg0] = 0; return; }
         for (someIndex = 0; someIndex < 4; someIndex++) {
             D_8018E838[someIndex] = 0;
         }
@@ -6297,12 +6376,14 @@ void func_8009E2F0(s32 arg0) {
 
 void func_8009E5BC(void) {
     s32 i;
-    for (i = 0; i < 4; i++) {
+    const s32 views = LocalMP_IsActive() ? LocalMP_Count() : 4;
+    for (i = 0; i < views; i++) {
         func_8009E5FC(i);
     }
 }
 
 void func_8009E5FC(s32 arg0) {
+    if (arg0 < 0 || arg0 >= MAX_HUMAN_PLAYERS) return;
     D_8018E838[arg0] = 1;
     D_8018E840[arg0] = 0;
 }

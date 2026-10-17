@@ -1,3 +1,4 @@
+#include <defines.h>
 #ifndef CODE_80057C60_H
 #define CODE_80057C60_H
 
@@ -399,7 +400,7 @@ extern Vec3su D_80183E98;
 // extern s32 indexObjectList1[]; -> objects.h
 // extern s32 indexObjectList2[]; -> objects.h
 
-extern const char* gLakituTextureBuffer[8][2];
+extern const char* gLakituTextureBuffer[MAX_HUMAN_PLAYERS][2];
 // extern s32 indexObjectList3[]; -> objects.h
 
 extern const char** gLakituTexturePtr;
@@ -602,7 +603,7 @@ extern u8* gTextureLoadedLightningBolt1;
 extern Vec3f gPlayerBalloonPosX[];
 extern Vec3f gPlayerBalloonPosY[];
 extern Vec3f gPlayerBalloonPosZ[];
-extern u16 gPlayerBalloonStatus[8][3];
+extern u16 gPlayerBalloonStatus[NUM_RACERS][3];
 extern Vec3s D_8018D620[];
 extern Vec3f D_8018D650[];
 extern Vec3f D_8018D6B0[];

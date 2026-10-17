@@ -1,5 +1,6 @@
 #ifndef _COMMON_STRUCTS_H_
 #define _COMMON_STRUCTS_H_
+#include "defines.h"
 
 #ifndef TARGET_N64
 #include <libultraship.h>
@@ -263,7 +264,7 @@ struct UnkPlayerInner {
 
 typedef struct {
     /* 0x0000 */ u16 type; // playerType?
-    /* 0x0002 */ u32 unk_002;
+    /* 0x0002 */ u64 unk_002;
     /* 0x0004 */ s16 currentRank;
     /* 0x0006 */ u16 unk_006;
     /* 0x0008 */ s16 lapCount;
@@ -280,8 +281,8 @@ typedef struct {
     /* 0x0042 */ s16 unk_042;
     /* 0x0044 */ s16 kartProps;
     /* 0x0046 */ u16 unk_046;
-    /* 0x0048 */ s16 unk_048[8];
-    /* 0x0050 */ s16 unk_050[8];
+    /* 0x0048 */ s16 unk_048[MAX_HUMAN_PLAYERS];
+    /* 0x0050 */ s16 unk_050[MAX_HUMAN_PLAYERS];
     /* 0x0058 */ f32 unk_058;
     /* 0x005C */ f32 unk_05C;
     /* 0x0060 */ f32 unk_060;
@@ -317,8 +318,8 @@ typedef struct {
     /* 0x00C6 */ s16 alpha;
     /* 0x00C8 */ s16 unk_0C8;
     /* 0x00CA */ s16 lakituProps;
-    /* Per viewport */ s16 unk_0CC[8];
-    /* Per viewport */ s16 unk_0D4[8];
+    /* Per viewport */ s16 unk_0CC[MAX_HUMAN_PLAYERS];
+    /* Per viewport */ s16 unk_0D4[MAX_HUMAN_PLAYERS];
     /* 0x00DC */ s16 boostTimer;
     /* 0x00DE */ u16 oobProps;
     /* 0x00E0 */ s16 unk_0E0;
@@ -364,8 +365,8 @@ typedef struct {
     /* 0x023A */ s16 unk_23A;
     /* 0x023C */ f32 unk_23C;
     /* 0x0240 */ s32 tyreSpeed;
-    /* 0x0244 */ u16 animFrameSelector[8]; // [0] Active texture group
-    /* 0x024C */ u16 animGroupSelector[8]; // Based on screen
+    /* 0x0244 */ u16 animFrameSelector[MAX_HUMAN_PLAYERS]; // [0] Active texture group
+    /* 0x024C */ u16 animGroupSelector[MAX_HUMAN_PLAYERS]; // Based on screen
     /* 0x0254 */ u16 characterId;
     /* 0x0256 */ u16 unk_256;
     /* 0x0258 */ UnkPlayerStruct258 particlePool0[10];
@@ -539,6 +540,6 @@ typedef struct {
     /* 0x83 */ s8 unk_83;
 } hud_player; // size = 0x84
 
-#define HUD_PLAYERS_SIZE 8
+#define HUD_PLAYERS_SIZE MAX_HUMAN_PLAYERS
 
 #endif
