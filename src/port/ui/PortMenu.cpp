@@ -172,6 +172,16 @@ void PortMenu::AddSettings() {
         .CVar("gSettings.Menu.SearchAutofocus")
         .Options(CheckboxOptions().Tooltip(
             "Search input box gets autofocus when visible. Does not affect using other widgets."));
+    AddWidget(path, "Show FPS counter", WIDGET_CVAR_CHECKBOX)
+        .CVar("gShowFpsCounter")
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip(
+            "Shows the current rendered frames per second in the top-left corner."));
+    AddWidget(path, "Enable Tab fast-forward", WIDGET_CVAR_CHECKBOX)
+        .CVar("gTabFastForward")
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Hold Tab while the game has keyboard focus to run gameplay as fast as the hardware allows. "
+            "Temporarily bypasses FPS pacing, VSync waits and interpolation frames; audio is muted to avoid backlog. "
+            "Release Tab to restore normal speed. Takes priority over the alternate-assets Tab hotkey. Saved graphics settings are preserved."));
     AddWidget(path, "Alt Assets Tab hotkey", WIDGET_CVAR_CHECKBOX)
         .CVar("gEnhancements.Mods.AlternateAssetsHotkey")
         .Options(
@@ -375,12 +385,12 @@ void PortMenu::AddMultiplayer() {
         .Callback([](WidgetInfo&) { MultiplayerOptions_OnEightChanged(); })
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "Adds 5P-8P choices to GAME SELECT: move right past 4P. Use the game controls to choose mode, class, characters and cup. "
-            "F8 opens the optional PC lobby. Wide screen preference chooses who fills spare layout space."));
+            "F8 opens the optional PC lobby. Screen layouts automatically fill spare row space."));
     AddWidget(path, "Enable 16 players", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_MULTIPLAYER_SIXTEEN)
         .PreFunc(outsideRace)
         .Callback([](WidgetInfo&) { MultiplayerOptions_OnSixteenChanged(); })
-        .Options(CheckboxOptions().DefaultValue(false).Tooltip(
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "Adds playable 9P-16P choices after 8P in GAME SELECT. Up to 16 humans can race; "
             "unused race slots are filled with CPU bots. Battle supports up to 16 humans, with no bots. Item boxes recover twice as fast in every mode. "
             "Time Trials with bots do not save records or ghosts. Applies to a new race or cup."));
@@ -407,26 +417,40 @@ void PortMenu::AddMultiplayer() {
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "Adds Grand Prix with bots to the normal 3/4-player menu. With Enable 8 players on, GP for 5-7 humans also fills the grid to eight. "
             "Changing this option returns to the main game menu. Both multiplayer options can be enabled together."));
+    AddWidget(path, "Turn AFK players into bots after X seconds", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_AFK_BOTS)
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Temporarily auto-play an inactive human player's kart. Any held button or stick input outside the dead zone "
+            "immediately gives control back. Counts active gameplay only; countdowns, pauses and results do not count. "
+            "Race modes use the CPU driver; Battle uses basic opponent-seeking steering and item use. Applies immediately and is saved."))
+        .PostFunc([](WidgetInfo&) {
+            static int seconds = 5;
+            static bool editing = false;
+            if (!editing) seconds = std::clamp(CVarGetInteger(CVAR_AFK_SECONDS, 5), 1, 86400);
+            ImGui::SetNextItemWidth(ImGui::GetFontSize() * 8.f);
+            ImGui::InputInt("AFK timeout (seconds)", &seconds, 0, 0);
+            const bool active = ImGui::IsItemActive();
+            if (ImGui::IsItemDeactivatedAfterEdit()) {
+                seconds = std::clamp(seconds, 1, 86400);
+                CVarSetInteger(CVAR_AFK_SECONDS, seconds);
+                Ship::Context::GetRawInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+            }
+            editing = active;
+        });
     AddWidget(path, "Enable race bomb karts (3+ players)", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_MULTIPLAYER_RACE_BOMBS)
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "Turn the bomb-kart obstacles on race tracks on or off for three or more human players. "
             "Applies immediately and is saved. Eliminated-player bombs in Battle are controlled by the normal Battle rules."));
-    static const std::unordered_map<int32_t, const char*> widePlayerOptions = {
-        {0, "Automatic (last player)"}, {1, "Player 1"}, {2, "Player 2"},
-        {3, "Player 3"}, {4, "Player 4"}, {5, "Player 5"}, {6, "Player 6"},
-        {7, "Player 7"}, {8, "Player 8"}
-    };
-    AddWidget(path, "Wide screen preference", WIDGET_CVAR_COMBOBOX)
-        .CVar("gMultiplayer.WidePlayer")
-        .Options(ComboboxOptions().ComboMap(widePlayerOptions).DefaultIndex(0).Tooltip(
-            "Choose who gets the wider bottom-row screen in 5 or 7 player modes. "
-            "Swaps screen positions with the last player. Applies immediately and is saved. "
-            "An absent player falls back to the last player. Six- and eight-player modes have equal screens."));
     AddWidget(path, "Options are saved. Move right past 4P in GAME SELECT for 5P-8P, then past 8P for 9P-16P. "
                     "Enable 16 players supports up to 16 humans in Grand Prix and VS, with bots in unused slots. "
                     "Battle keeps its current player count. With 16 players off, the Grand Prix bots option fills to eight.", WIDGET_TEXT);
     AddWidget(path, "Visibility", WIDGET_SEPARATOR_TEXT);
+    AddWidget(path, "Enable Luigi Raceway video screen in multiplayer", WIDGET_CVAR_CHECKBOX)
+        .CVar("gMultiplayer.LuigiRacewayScreen")
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Show live gameplay on Luigi Raceway's trackside video billboard in multiplayer. "
+            "Turn off to restore the blank multiplayer screen. Applies immediately and is saved."));
     const auto minimapNumberEntry = [](WidgetInfo& info) {
         const auto options = std::static_pointer_cast<IntSliderOptions>(info.options);
         struct NumericState { int value = 0; bool editing = false; };
@@ -447,7 +471,7 @@ void PortMenu::AddMultiplayer() {
     };
     AddWidget(path, "Minimap size: %d%%", WIDGET_CVAR_SLIDER_INT)
         .CVar(CVAR_MINIMAP_SIZE)
-        .Options(IntSliderOptions().Min(10).Max(300).Step(5).DefaultValue(100).Tooltip(
+        .Options(IntSliderOptions().Min(10).Max(300).Step(5).DefaultValue(85).Tooltip(
             "Scale the course/arena minimap and its player markers. 100% keeps the normal size. "
             "Drag the slider or type a percentage below, then press Enter or click away. Applies immediately and is saved."))
         .PreFunc([](WidgetInfo& info) {
@@ -456,7 +480,7 @@ void PortMenu::AddMultiplayer() {
         .PostFunc(minimapNumberEntry);
     AddWidget(path, "Minimap transparency: %d%%", WIDGET_CVAR_SLIDER_INT)
         .CVar(CVAR_MINIMAP_TRANSPARENCY)
-        .Options(IntSliderOptions().Min(0).Max(100).Step(5).DefaultValue(0).Tooltip(
+        .Options(IntSliderOptions().Min(0).Max(100).Step(5).DefaultValue(25).Tooltip(
             "Fade the entire course/arena minimap, including player markers and finish line. "
             "0% is opaque; 100% hides it. Drag the slider or enter a percentage below. Applies immediately and is saved."))
         .PreFunc([](WidgetInfo& info) {
@@ -541,6 +565,11 @@ void PortMenu::AddEnhancements() {
     AddWidget(path, "Enable Look Behind Camera", WIDGET_CVAR_CHECKBOX)
         .CVar("gLookBehind")
         .Options(CheckboxOptions().Tooltip("Press C-Left to look behind you"));
+    AddWidget(path, "Camera always stays in front of walls", WIDGET_CVAR_CHECKBOX)
+        .CVar("gCameraStayInFrontOfWalls")
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip(
+            "Moves the gameplay camera closer to the kart when track geometry blocks it. "
+            "Returns to normal distance as the wall clears. Applies to every player's normal and look-behind camera."));
     AddWidget(path, "Fix Visuals", WIDGET_CVAR_CHECKBOX)
         .CVar("gFixVisuals")
         .Options(CheckboxOptions().Tooltip("Fixes the second last lamp glow in Banshee Boardwalk"));
@@ -598,8 +627,8 @@ void PortMenu::AddRulesets() {
         .CVar("gUniqueCharacterSelections")
         .Options(CheckboxOptions()
           .Tooltip(
-            "Prevents players from selecting the same character")
-          .DefaultValue(true)
+            "Require different characters in the normal 2-4 player menu. Off by default so players can share a character, like expanded multiplayer.")
+          .DefaultValue(false)
         );
     AddWidget(path, "No Itemboxes", WIDGET_CVAR_CHECKBOX)
         .CVar("gDisableItemboxes")

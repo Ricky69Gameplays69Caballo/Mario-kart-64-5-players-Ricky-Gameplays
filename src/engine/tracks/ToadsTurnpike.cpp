@@ -240,7 +240,7 @@ void ToadsTurnpike::Draw(ScreenContext* arg0) {
     gDPSetCombineMode(gDisplayListHead++, G_CC_MODULATEI, G_CC_PASS2);
     gDPSetRenderMode(gDisplayListHead++, G_RM_FOG_SHADE_A, G_RM_AA_ZB_OPA_SURF2);
 
-    render_track_sections(d_course_toads_turnpike_dl_list, arg0);
+    render_track_sections(d_course_toads_turnpike_dl_list, arg0, sizeof(d_course_toads_turnpike_dl_list) / sizeof(d_course_toads_turnpike_dl_list[0]));
 
     gDPSetRenderMode(gDisplayListHead++, G_RM_FOG_SHADE_A, G_RM_AA_ZB_TEX_EDGE2);
     gDPSetCombineMode(gDisplayListHead++, G_CC_DECALRGBA, G_CC_PASS2);

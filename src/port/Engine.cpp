@@ -298,6 +298,7 @@ bool GameEngine::GenAssetFile() {
 }
 
 uint32_t GameEngine::GetInterpolationFPS() {
+    if (Ship::Context::GetRawInstance()->GetWindow()->IsFastForward()) return 30;
     if (CVarGetInteger("gMatchRefreshRate", 0)) {
         return Ship::Context::GetRawInstance()->GetWindow()->GetCurrentRefreshRate();
 
@@ -380,12 +381,19 @@ void GameEngine::Destroy() {
 bool ShouldClearTextureCacheAtEndOfFrame = false;
 
 void GameEngine::StartFrame() const {
+    auto window = this->context->GetWindow();
+    const auto& io = ImGui::GetIO();
+    window->SetFastForward(CVarGetInteger("gTabFastForward", 1) &&
+        !io.AppFocusLost && !io.WantCaptureKeyboard && !io.WantTextInput &&
+        ImGui::IsKeyDown(ImGuiKey_Tab) && !io.KeyAlt && !io.KeyCtrl && !io.KeySuper);
     using Ship::KbScancode;
     const int32_t dwScancode = this->context->GetWindow()->GetLastScancode();
     this->context->GetWindow()->SetLastScancode(-1);
 
     switch (dwScancode) {
         case KbScancode::LUS_KB_TAB: {
+            if (CVarGetInteger("gTabFastForward", 1) ||
+                !CVarGetInteger("gEnhancements.Mods.AlternateAssetsHotkey", 1)) break;
             // Toggle HD Assets
             CVarSetInteger("gEnhancements.Mods.AlternateAssets", !CVarGetInteger("gEnhancements.Mods.AlternateAssets", 0));
             break;
@@ -446,6 +454,16 @@ void GameEngine::ProcessGfxCommands(Gfx* pool) {
     static int last_fps;
     static int last_update_rate;
     static int time;
+    if (Ship::Context::GetRawInstance()->GetWindow()->IsFastForward()) {
+        // One rendered frame per game iteration, with presentation waits off.
+        // Increasing interpolation FPS alone would leave simulation at 30 Hz.
+        auto wnd = std::dynamic_pointer_cast<Fast::Fast3dWindow>(Ship::Context::GetRawInstance()->GetWindow());
+        if (wnd) wnd->SetTargetFps(30);
+        RunCommands(pool, std::vector<std::unordered_map<Mtx*, MtxF>>(1));
+        time = 0;
+        last_fps = 0;
+        return;
+    }
     int fps = target_fps;
     int original_fps = 60 / 2 /*gVIsPerFrame*/;
 
@@ -518,7 +536,10 @@ void GameEngine::HandleAudioThread() {
             mix_buffer[i] = nas_buffer[i] + ((int16_t)(hmas_buffer[i] * 32767.0f) * master_vol);
         }
 
-        AudioPlayerPlayFrame((u8*) mix_buffer, 2 * num_audio_samples * 4);
+        // Advance audio state with the game, but never queue unbounded audio
+        // while the simulation runs faster than the physical audio device.
+        if (!Ship::Context::GetRawInstance()->GetWindow()->IsFastForward())
+            AudioPlayerPlayFrame((u8*) mix_buffer, 2 * num_audio_samples * 4);
 
         audio.processing = false;
         audio.cv_from_thread.notify_one();

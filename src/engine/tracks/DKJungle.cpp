@@ -274,7 +274,7 @@ void DKJungle::Draw(ScreenContext* arg0) {
     gSPTexture(gDisplayListHead++, 0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_ON);
     gDPSetCombineMode(gDisplayListHead++, G_CC_MODULATEIDECALA, G_CC_MODULATEIDECALA);
     gDPSetRenderMode(gDisplayListHead++, G_RM_AA_ZB_TEX_EDGE, G_RM_AA_ZB_TEX_EDGE2);
-    render_track_sections(d_course_dks_jungle_parkway_unknown_dl_list, arg0);
+    render_track_sections(d_course_dks_jungle_parkway_unknown_dl_list, arg0, sizeof(d_course_dks_jungle_parkway_unknown_dl_list) / sizeof(d_course_dks_jungle_parkway_unknown_dl_list[0]));
 
     gSPSetGeometryMode(gDisplayListHead++, G_CULL_BACK);
 }

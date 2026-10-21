@@ -63,6 +63,7 @@ s16 D_80165020[40];
 Vec3f gPlayerLastVelocity[NUM_RACERS];
 s16 gLastAnimFrameSelector[MAX_HUMAN_PLAYERS][NUM_RACERS];
 s16 gLastAnimGroupSelector[MAX_HUMAN_PLAYERS][NUM_RACERS];
+u8 gLastWheelFramesAlternate[MAX_HUMAN_PLAYERS][NUM_RACERS];
 s16 D_80165150[MAX_HUMAN_PLAYERS][NUM_RACERS];
 s16 D_80165190[MAX_HUMAN_PLAYERS][NUM_RACERS];
 s16 D_801651D0[MAX_HUMAN_PLAYERS][NUM_RACERS];
@@ -1694,67 +1695,43 @@ void func_80026A48(Player* player, s8 arg1) {
 // 80 bytes between each wheel palette
 u32 wheel_offset[] = { 1076, 1076, 996, 916, 916, 916, 836, 756, 756 };
 
+s32 kart_uses_alternate_wheel_frames(const Player* player) {
+    return (player->effects & (0x80 | 0x40 | 0x20000 | 0x80000 | 0x800000)) != 0 ||
+           (player->kartProps & UNUSED_0x800) != 0;
+}
+
 void update_wheel_palette(Player* player, s8 playerId, s8 screenId, s8 arg3) {
-    s16 frameId = gLastAnimFrameSelector[screenId][playerId];
-    s16 groupId = gLastAnimGroupSelector[screenId][playerId];
-    s16 tyreSpeed = player->tyreSpeed;
+    const s16 frameId = gLastAnimFrameSelector[screenId][playerId];
+    const s16 groupId = gLastAnimGroupSelector[screenId][playerId];
+    const u16 character = player->characterId;
+    static const u32 paletteCounts[] = {
+        ARRAY_COUNT(mario_kart_wheels), ARRAY_COUNT(luigi_kart_wheels),
+        ARRAY_COUNT(yoshi_kart_wheels), ARRAY_COUNT(toad_kart_wheels),
+        ARRAY_COUNT(donkeykong_kart_wheels), ARRAY_COUNT(wario_kart_wheels),
+        ARRAY_COUNT(peach_kart_wheels), ARRAY_COUNT(bowser_kart_wheels),
+    };
+    // Match the texture actually loaded for this view, not the current effect:
+    // an offscreen kart may still have its previous normal-animation texture
+    // when a spin/shrink effect starts. Mixing the two frame layouts reads
+    // beyond wheelPtr's table (e.g. Luigi group 0, frame 21 -> index 1162).
+    const s32 alternate = gLastWheelFramesAlternate[screenId][playerId];
+    if (character >= ARRAY_COUNT(wheelPtr) || groupId < 0 || groupId >= ARRAY_COUNT(wheel_offset) ||
+        frameId < 0 || frameId > (alternate ? 19 : 34)) return;
 
-    u8 character = player->characterId;
-    u32 wheel0 = 84*(8-groupId);
-    u32 wheel1 = wheel_offset[groupId];
-
-    if (((player->effects & 0x4000) == 0x4000) && ((player->type & PLAYER_START_SEQUENCE) == 0)) {
-        if (((player->effects & 0x80) != 0x80) && ((player->effects & 0x40) != 0x40) &&
-            ((player->effects & 0x20000) != 0x20000) && ((player->effects & 0x80000) != 0x80000) &&
-            ((player->effects & 0x800000) != 0x800000) && ((player->kartProps & UNUSED_0x800) == 0)) {
-
-            if (frameId <= 20) {
-                int32_t offset = (frameId << 2) + (tyreSpeed >> 8);
-                load_wheel_palette_non_blocking(player, wheelPtr[character][wheel0 + offset],
-                                                PLAYER_WHEEL_MACRO(arg3, screenId, playerId), 0x80);
-            } else {
-                int32_t offset = ((frameId - 21) << 2) + (tyreSpeed >> 8) + 0x18;
-                load_wheel_palette_non_blocking(player, wheelPtr[character][wheel1 + offset],
-                                                PLAYER_WHEEL_MACRO(arg3, screenId, playerId), 0x80);
-            }
-        } else {
-            if (frameId == 0) {
-                int32_t offset = (frameId << 2) + (tyreSpeed >> 8);
-                load_wheel_palette_non_blocking(player, wheelPtr[character][wheel0 + offset],
-                                                PLAYER_WHEEL_MACRO(arg3, screenId, playerId), 0x80);
-            } else {
-                int32_t offset = (frameId << 2) + (tyreSpeed >> 8);
-                load_wheel_palette_non_blocking(player, wheelPtr[character][wheel1 + offset],
-                                                PLAYER_WHEEL_MACRO(arg3, screenId, playerId), 0x80);
-            }
-        }
+    const u32 phase = ((u32)player->tyreSpeed >> 8) & 3;
+    u32 paletteIndex;
+    if (alternate && frameId != 0) {
+        paletteIndex = wheel_offset[groupId] + (frameId << 2) + phase;
+    } else if (frameId <= 20) {
+        paletteIndex = 84 * (8 - groupId) + (frameId << 2) + phase;
     } else {
-        if (((player->effects & 0x80) != 0x80) && ((player->effects & 0x40) != 0x40) &&
-            ((player->effects & 0x80000) != 0x80000) && ((player->effects & 0x800000) != 0x800000) &&
-            ((player->effects & 0x20000) != 0x20000) && ((player->kartProps & UNUSED_0x800) == 0)) {
-
-            if (frameId <= 20) {
-                int32_t offset = (frameId << 2) + (tyreSpeed >> 8);
-                load_wheel_palette_non_blocking(player, wheelPtr[character][wheel0 + offset],
-                                                PLAYER_WHEEL_MACRO(arg3, screenId, playerId), 0x80);
-            } else {
-
-                int32_t offset = ((frameId - 21) << 2) + (tyreSpeed >> 8) + 0x18;
-                load_wheel_palette_non_blocking(player, wheelPtr[character][wheel1 + offset],
-                                                PLAYER_WHEEL_MACRO(arg3, screenId, playerId), 0x80);
-            }
-        } else {
-            if (frameId == 0) {
-                int32_t offset = (frameId << 2) + (tyreSpeed >> 8);
-                load_wheel_palette_non_blocking(player, wheelPtr[character][wheel0 + offset],
-                                                PLAYER_WHEEL_MACRO(arg3, screenId, playerId), 0x80);
-            } else {
-                int32_t offset = (frameId << 2) + (tyreSpeed >> 8);
-                load_wheel_palette_non_blocking(player, wheelPtr[character][wheel1 + offset],
-                                                PLAYER_WHEEL_MACRO(arg3, screenId, playerId), 0x80);
-            }
-        }
+        paletteIndex = wheel_offset[groupId] + ((frameId - 21) << 2) + phase + 0x18;
     }
+    // Preserve the previous palette rather than passing an out-of-range
+    // pointer to the resource loader if an invalid animation state occurs.
+    if (paletteIndex >= paletteCounts[character]) return;
+    load_wheel_palette_non_blocking(player, wheelPtr[character][paletteIndex],
+                                    PLAYER_WHEEL_MACRO(arg3, screenId, playerId), 0x80);
 }
 
 #undef PLAYER_WHEEL_MACRO

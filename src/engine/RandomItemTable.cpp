@@ -38,7 +38,7 @@ bool RandomItemTable::Add(const std::string& resourceName, uint32_t rank, uint32
     return true;
 }
 
-uint8_t RandomItemTable::Roll(uint32_t rank) const {
+uint8_t RandomItemTable::Roll(uint32_t rank, bool excludeLightning) const {
     if (rank >= mTable.size()) {
         printf("[ItemTables] [Roll] Invalid rank input %d. Giving player a none item\n", rank);
         return ITEM_NONE;
@@ -54,7 +54,7 @@ uint8_t RandomItemTable::Roll(uint32_t rank) const {
     // Calculate total weight
     uint32_t totalWeight = 0;
     for (const ItemEntry& entry : itemList) {
-        if (this->IsBlacklisted(entry.Id)) {
+        if (this->IsBlacklisted(entry.Id) || (excludeLightning && entry.Id == ITEM_THUNDERBOLT)) {
             continue;
         }
         totalWeight += entry.Weight;
@@ -72,7 +72,7 @@ uint8_t RandomItemTable::Roll(uint32_t rank) const {
     // Cumulative sum over weights
     uint32_t accumulated = 0;
     for (const ItemEntry& entry : itemList) {
-        if (this->IsBlacklisted(entry.Id)) {
+        if (this->IsBlacklisted(entry.Id) || (excludeLightning && entry.Id == ITEM_THUNDERBOLT)) {
             continue;
         }
         accumulated += entry.Weight;

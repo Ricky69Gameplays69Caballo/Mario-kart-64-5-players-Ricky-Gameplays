@@ -724,6 +724,8 @@ void detect_wrong_player_direction(s32 playerId, Player* player) {
 }
 
 void set_places(void) {
+    // Background driving must not reorder the completed expanded race.
+    if (LocalMP_RaceResultsOpen()) return;
     s32 temp_s2;
     f32 temp_f0;
     s32 sp80[NUM_RACERS];
@@ -1479,6 +1481,12 @@ void update_player_path_completion(s32 playerId, Player* player) {
         update_player_position_factor(playerId, sSomeNearestPathPoint, gPlayerPathIndex);
         return;
     }
+    // Finished expanded racers keep driving, but their laps are final. In
+    // particular they must never reach the native fifth-lap rollover below.
+    if (LocalMP_IsActive() && LocalMP_IsFinished(playerId)) {
+        gPreviousPlayerZ[playerId] = playerZ;
+        return;
+    }
     if ((sSomeNearestPathPoint < 20) || ((gPathCountByPathIndex[gPlayerPathIndex] - 20) < sSomeNearestPathPoint) ||
         (IsKalimariDesert())) {
         s16 var_v1 = 0;
@@ -1515,7 +1523,7 @@ void update_player_path_completion(s32 playerId, Player* player) {
         if ((var_v1 != 0) && (playerZ <= gPathStartZ)) {
             if (gPathStartZ < previousPlayerZ) {
                 gLapCountByPlayerId[playerId]++;
-                if ((gModeSelection == GRAND_PRIX) && (gLapCountByPlayerId[playerId] == 5)) {
+                if (!LocalMP_IsActive() && (gModeSelection == GRAND_PRIX) && (gLapCountByPlayerId[playerId] == 5)) {
                     if (gGPCurrentRaceRankByPlayerIdDup[playerId] == 7) {
                         // clang-format off
                         for (var_v0 = 0; var_v0 < LocalMP_RacerCount(); var_v0++) { gLapCountByPlayerId[var_v0]--; } // has to be one line to match
@@ -1609,7 +1617,7 @@ void update_player_timer_sound(s32 playerId, UNUSED Player* unused) {
 }
 
 void update_player(s32 playerId) {
-    if (LocalMP_IsActive() && LocalMP_IsFinished(playerId)) return;
+    if (LocalMP_IsActive() && LocalMP_IsFinished(playerId) && !LocalMP_CanCoastAfterFinish(playerId)) return;
     UNUSED s32 pad[14];
     s16 var_a0_2;
     s16 newAngle;
@@ -7125,6 +7133,10 @@ void cpu_use_item_strategy(s32 playerId) {
     TrackPathPoint* pathPoint;
     bool isValidBanana1;
     bool isValidBanana2;
+
+    // Takeover bots use the human's real inventory via normal item input.
+    // Do not also grant them the native CPU strategy's generated items.
+    if (LocalMP_IsAfkBot(playerId)) return;
 
 // Only used in this function
 #define BANANA_ACTOR(actor) ((struct BananaActor*) (actor))

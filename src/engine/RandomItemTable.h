@@ -15,7 +15,7 @@ class RandomItemTable {
 public:
     RandomItemTable();
     bool Add(const std::string& resourceName, uint32_t rank, uint32_t weight, float distance);
-    uint8_t Roll(uint32_t rank) const;
+    uint8_t Roll(uint32_t rank, bool excludeLightning = false) const;
     void Blacklist(const std::string& resourceName);
     bool IsBlacklisted(uint32_t id) const;
     void ClearBlacklist();

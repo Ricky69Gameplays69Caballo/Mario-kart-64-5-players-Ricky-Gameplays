@@ -88,7 +88,7 @@ void parse_track_displaylists(TrackSections* asset) {
 
 extern u32 isFlycam;
 
-void render_track_sections(const char* addr[], ScreenContext* arg1) {
+void render_track_sections(const char* addr[], ScreenContext* arg1, s32 displayListCount) {
     Player* player = arg1->player;
     Camera* camera = arg1->camera;
     s16 direction;
@@ -96,6 +96,10 @@ void render_track_sections(const char* addr[], ScreenContext* arg1) {
     s16 sp1E;
     s16 temp_v0_3;
     u16 rot;
+    const s32 sectionCount = displayListCount / 4;
+    if (sectionCount <= 0 || player == NULL || camera == NULL) return;
+    const s16 playerSection = get_track_section_id(player->collision.meshIndexZX);
+    const s16 cameraSection = get_track_section_id(camera->collision.meshIndexZX);
     if (gIsMirrorMode) {
         rot = (u16) camera->rot[1];
         if (rot < 0x2000) {
@@ -183,13 +187,26 @@ void render_track_sections(const char* addr[], ScreenContext* arg1) {
         }
     }
 
+    // Wall collision triangles can carry section zero (not a render section),
+    // or belong to the far side of a wall. Never index before/after the table.
+    // Recover invalid indices from the kart floor or last valid section.
+    // Valid indices retain the stock camera-based selection rules.
+    if (index <= 0 || index > sectionCount) {
+        if (playerSection > 0 && playerSection <= sectionCount && player->collision.surfaceDistance[2] <= 30.0f)
+            index = playerSection;
+        else if (arg1->pathCounter > 0 && arg1->pathCounter <= sectionCount)
+            index = arg1->pathCounter;
+        else if (cameraSection > 0 && cameraSection <= sectionCount)
+            index = cameraSection;
+        else index = 1;
+    }
     arg1->pathCounter = index;
     index = ((index - 1) * 4) + direction;
-    gSPDisplayList(gDisplayListHead++, addr[index]);
+    if (addr[index] != NULL) gSPDisplayList(gDisplayListHead++, addr[index]);
 
     if (CVarGetInteger("gDisableLod", 1) == 1 && (IsBowsersCastle()) &&
         (index < 20 || index > 99)) { // always render higher version of bowser statue
-        gDisplayListHead--;
+        if (addr[index] != NULL) gDisplayListHead--;
         gSPDisplayList(gDisplayListHead++, d_course_bowsers_castle_dl_9148); // use credit version of the track
     }
 }

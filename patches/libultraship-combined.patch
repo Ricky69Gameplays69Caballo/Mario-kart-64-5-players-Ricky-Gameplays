@@ -1,16 +1,17 @@
 diff --git a/include/fast/Fast3dGui.h b/include/fast/Fast3dGui.h
-index 80d0231..dd5a38f 100644
+index 80d0231..a6c6607 100644
 --- a/include/fast/Fast3dGui.h
 +++ b/include/fast/Fast3dGui.h
-@@ -64,6 +64,7 @@ class Fast3dGui : public Ship::Gui {
+@@ -64,6 +64,8 @@ class Fast3dGui : public Ship::Gui {
      ~Fast3dGui() override = default;
  
      bool SupportsViewports() override;
 +    void SetDisplaySpanActive(bool active) { mDisplaySpanActive = active; }
++    bool IsDisplaySpanActive() const { return mDisplaySpanActive; }
  
      /**
       * @brief Initialises the ImGui context with the given backend-specific handles.
-@@ -163,6 +164,7 @@ class Fast3dGui : public Ship::Gui {
+@@ -163,6 +165,7 @@ class Fast3dGui : public Ship::Gui {
      GuiWindowInitData mImpl;                 ///< Backend-specific window/context handles passed to Init().
  
    private:
@@ -65,10 +66,14 @@ index 9156fd0..cf22179 100644
       * @brief Draws a single stick-direction mapping line (e.g. "Stick Up").
       * @param axisDirectionName Human-readable axis/direction label.
 diff --git a/include/ship/controller/physicaldevice/ConnectedPhysicalDeviceManager.h b/include/ship/controller/physicaldevice/ConnectedPhysicalDeviceManager.h
-index 33f9a66..27dc1ae 100644
+index 33f9a66..95a1bc9 100644
 --- a/include/ship/controller/physicaldevice/ConnectedPhysicalDeviceManager.h
 +++ b/include/ship/controller/physicaldevice/ConnectedPhysicalDeviceManager.h
-@@ -4,6 +4,7 @@
+@@ -1,9 +1,11 @@
+ #pragma once
+ 
++#include <array>
+ #include <unordered_map>
  #include <unordered_set>
  #include <vector>
  #include <string>
@@ -76,19 +81,100 @@ index 33f9a66..27dc1ae 100644
  #include <SDL2/SDL.h>
  
  namespace Ship {
-@@ -86,5 +87,7 @@ class ConnectedPhysicalDeviceManager {
+@@ -28,9 +30,10 @@ class ConnectedPhysicalDeviceManager {
+      * Gamepads on the port's ignore list are excluded from the result.
+      *
+      * @param portIndex Zero-based controller port index.
+-     * @return Map of SDL joystick instance ID to SDL_GameController pointer.
++     * @return Cached map of SDL joystick instance ID to SDL_GameController pointer.
++     * The reference belongs to the manager; consume it before changing device assignments.
+      */
+-    std::unordered_map<int32_t, SDL_GameController*> GetConnectedSDLGamepadsForPort(uint8_t portIndex);
++    const std::unordered_map<int32_t, SDL_GameController*>& GetConnectedSDLGamepadsForPort(uint8_t portIndex) const;
+ 
+     /**
+      * @brief Returns the display names of all connected SDL gamepads.
+@@ -43,7 +46,7 @@ class ConnectedPhysicalDeviceManager {
+      * @param portIndex Zero-based controller port index.
+      * @return Set of ignored joystick instance IDs.
+      */
+-    std::unordered_set<int32_t> GetIgnoredInstanceIdsForPort(uint8_t portIndex);
++    const std::unordered_set<int32_t>& GetIgnoredInstanceIdsForPort(uint8_t portIndex) const;
+ 
+     /**
+      * @brief Checks whether a specific joystick instance is being ignored on a port.
+@@ -51,7 +54,7 @@ class ConnectedPhysicalDeviceManager {
+      * @param instanceId SDL joystick instance ID.
+      * @return true if the instance is ignored for the given port.
+      */
+-    bool PortIsIgnoringInstanceId(uint8_t portIndex, int32_t instanceId);
++    bool PortIsIgnoringInstanceId(uint8_t portIndex, int32_t instanceId) const;
+ 
+     /**
+      * @brief Adds a joystick instance to a port's ignore list.
+@@ -81,10 +84,21 @@ class ConnectedPhysicalDeviceManager {
+ 
+     /** @brief Re-scans all connected SDL gamepads and rebuilds the internal maps. */
+     void RefreshConnectedSDLGamepads();
++    std::vector<std::string> GetEnabledDeviceKeysForPort(uint8_t portIndex);
++    void SetEnabledDeviceKeysForPort(uint8_t portIndex, const std::vector<std::string>& keys);
+ 
+   private:
++    void LoadAssignments();
++    void SaveAssignments();
++    void ApplyAssignments();
++    void RebuildGamepadsForPort(uint8_t portIndex);
++    void RebuildGamepadsForAllPorts();
++    bool mAssignmentsLoaded = false;
      std::unordered_map<int32_t, SDL_GameController*> mConnectedSDLGamepads;
++    std::array<std::unordered_map<int32_t, SDL_GameController*>, 16> mGamepadsForPort;
      std::unordered_map<int32_t, std::string> mConnectedSDLGamepadNames;
      std::unordered_map<uint8_t, std::unordered_set<int32_t>> mIgnoredInstanceIds;
 +    std::unordered_map<int32_t, std::string> mDeviceKeys;
 +    std::unordered_map<std::string, uint16_t> mRememberedIgnoredPorts;
  };
  } // namespace Ship
+diff --git a/include/ship/window/Window.h b/include/ship/window/Window.h
+index 66a2b26..ae7c706 100644
+--- a/include/ship/window/Window.h
++++ b/include/ship/window/Window.h
+@@ -1,6 +1,7 @@
+ #pragma once
+ 
+ #include <memory>
++#include <atomic>
+ #include <filesystem>
+ #include <string>
+ #include <vector>
+@@ -227,6 +228,8 @@ class Window {
+     void SetLastScancode(int32_t scanCode);
+     /** @brief Toggles between fullscreen and windowed mode. */
+     void ToggleFullscreen();
++    void SetFastForward(bool active) { mFastForward.store(active); }
++    bool IsFastForward() const { return mFastForward.load(); }
+     /** @brief Returns the current aspect ratio, recomputed from GetWidth() / GetHeight(). */
+     float GetCurrentAspectRatio();
+     /** @brief Persists window geometry and backend settings to the Config. */
+@@ -284,6 +287,7 @@ class Window {
+     int32_t GetSavedWindowBackend();
+ 
+   private:
++    std::atomic<bool> mFastForward{false};
+     std::shared_ptr<Gui> mGui;
+     int32_t mLastScancode = -1;
+     int32_t mWindowBackend;
 diff --git a/src/fast/Fast3dGui.cpp b/src/fast/Fast3dGui.cpp
-index 237a502..1a138d3 100644
+index 237a502..8b5779f 100644
 --- a/src/fast/Fast3dGui.cpp
 +++ b/src/fast/Fast3dGui.cpp
-@@ -320,19 +320,22 @@ void Fast3dGui::CalculateGameViewport() {
+@@ -1,4 +1,6 @@
+ #include "fast/Fast3dGui.h"
++#include <algorithm>
++#include <cmath>
+ 
+ #include "fast/Fast3dWindow.h"
+ #include "ship/Context.h"
+@@ -320,19 +322,22 @@ void Fast3dGui::CalculateGameViewport() {
      mainPos.y -= mTemporaryWindowPos.y;
      ImVec2 size = ImGui::GetContentRegionAvail();
      const auto interpreter = mInterpreter.lock().get();
@@ -115,7 +201,38 @@ index 237a502..1a138d3 100644
          case 1: { // N64 Mode
              interpreter->mCurDimensions.width = 320;
              interpreter->mCurDimensions.height = 240;
-@@ -378,12 +381,12 @@ void Fast3dGui::DrawGame() {
+@@ -356,6 +361,30 @@ void Fast3dGui::CalculateGameViewport() {
+         }
+     }
+ 
++    // Apply after every resolution mode, including the normal window-scaled
++    // path. Moving a 4x/8x-MSAA window onto a 4K TV otherwise requests a
++    // 15360x8640 multisampled color/depth pair (about 8 GiB for that pair alone).
++    // Keep the saved preferences, but bound the effective allocation and aspect.
++    const auto requestedWidth = std::max(1U, interpreter->mCurDimensions.width);
++    const auto requestedHeight = std::max(1U, interpreter->mCurDimensions.height);
++    const auto samples = std::max(1U, interpreter->mMsaaLevel);
++    constexpr double maxSamplePixels = 3840.0 * 2160.0 * 8.0;
++    const double scale = std::min({1.0, 8096.0 / requestedWidth, 4320.0 / requestedHeight,
++        std::sqrt(maxSamplePixels / (double(requestedWidth) * requestedHeight * samples))});
++    interpreter->mCurDimensions.width = std::max(1U, uint32_t(requestedWidth * scale));
++    interpreter->mCurDimensions.height = std::max(1U, uint32_t(requestedHeight * scale));
++    if (scale < 1.0) {
++        static uint32_t lastWidth = 0, lastHeight = 0, lastSamples = 0;
++        if (lastWidth != requestedWidth || lastHeight != requestedHeight || lastSamples != samples) {
++            SPDLOG_WARN("Render allocation limited: {}x{} -> {}x{}, MSAA {}. Saved render scale unchanged.",
++                requestedWidth, requestedHeight, interpreter->mCurDimensions.width,
++                interpreter->mCurDimensions.height, samples);
++            lastWidth = requestedWidth;
++            lastHeight = requestedHeight;
++            lastSamples = samples;
++        }
++    }
++
+     ImGui::End();
+ }
+ 
+@@ -378,12 +407,12 @@ void Fast3dGui::DrawGame() {
      ImVec2 pos = ImVec2(0, 0);
      const auto interpreter = mInterpreter.lock().get();
  
@@ -130,11 +247,208 @@ index 237a502..1a138d3 100644
                     CVAR_PREFIX_ADVANCED_RESOLUTION ".Enabled", 0)) {
          if (!Ship::Context::GetRawInstance()->GetConsoleVariables()->GetInteger(
                  CVAR_PREFIX_ADVANCED_RESOLUTION ".PixelPerfectMode", 0)) {
+diff --git a/src/fast/Fast3dWindow.cpp b/src/fast/Fast3dWindow.cpp
+index 2b77a5f..38e6e13 100644
+--- a/src/fast/Fast3dWindow.cpp
++++ b/src/fast/Fast3dWindow.cpp
+@@ -384,6 +384,8 @@ bool Fast3dWindow::MouseButtonDown(int button) {
+ 
+ void Fast3dWindow::OnFullscreenChanged(bool isNowFullscreen) {
+     std::shared_ptr<Window> wnd = Ship::Context::GetRawInstance()->GetWindow();
++    const auto gui = std::dynamic_pointer_cast<Fast3dGui>(wnd->GetGui());
++    if (gui && gui->IsDisplaySpanActive()) return;
+ 
+     // Re-save fullscreen enabled after
+     Ship::Context::GetRawInstance()->GetConfig()->SetBool("Window.Fullscreen.Enabled", isNowFullscreen);
+diff --git a/src/fast/backends/gfx_direct3d11.cpp b/src/fast/backends/gfx_direct3d11.cpp
+index bf29f83..41ded03 100644
+--- a/src/fast/backends/gfx_direct3d11.cpp
++++ b/src/fast/backends/gfx_direct3d11.cpp
+@@ -872,6 +872,24 @@ void GfxRenderingAPIDX11::UpdateFramebufferParameters(int fb_id, uint32_t width,
+ 
+     bool diff = tex.width != width || tex.height != height || fb.msaa_level != msaa_level;
+ 
++    if (diff) {
++        // Fullscreen/resize replaces large render textures. Context bindings and
++        // our SRV cache own additional references: release those before creating
++        // replacements, rather than retaining the entire old MSAA allocation.
++        // DXGI also requires the back buffer to be unbound before ResizeBuffers.
++        mContext->OMSetRenderTargets(0, nullptr, nullptr);
++        ID3D11ShaderResourceView* nullViews[SHADER_MAX_TEXTURES] = {};
++        mContext->PSSetShaderResources(0, SHADER_MAX_TEXTURES, nullViews);
++        mContext->CSSetShaderResources(0, 1, nullViews);
++        for (auto& view : mLastResourceViews) view.Reset();
++        fb.render_target_view.Reset();
++        fb.depth_stencil_view.Reset();
++        fb.depth_stencil_srv.Reset();
++        tex.resource_view.Reset();
++        tex.texture.Reset();
++        mContext->Flush();
++    }
++
+     if (diff || (fb.render_target_view.Get() != nullptr) != render_target) {
+         if (fb_id != 0) {
+             D3D11_TEXTURE2D_DESC texture_desc;
+diff --git a/src/fast/backends/gfx_dxgi.cpp b/src/fast/backends/gfx_dxgi.cpp
+index 09c04da..bb24d7c 100644
+--- a/src/fast/backends/gfx_dxgi.cpp
++++ b/src/fast/backends/gfx_dxgi.cpp
+@@ -145,6 +145,8 @@ static bool GetMonitorAtCoords(std::vector<std::tuple<HMONITOR, RECT, BOOL>> Mon
+     return false;
+ }
+ 
++static void GetMonitorHzPeriod(std::tuple<HMONITOR, RECT, BOOL> Monitor, double& Frequency, double& Period);
++
+ void GfxWindowBackendDXGI::ToggleBorderlessWindowFullScreen(bool enable, bool call_callback) {
+     // Windows 7 + flip mode + waitable object can't go to exclusive fullscreen,
+     // so do borderless instead. If DWM is enabled, this means we get one monitor
+@@ -189,9 +191,19 @@ void GfxWindowBackendDXGI::ToggleBorderlessWindowFullScreen(bool enable, bool ca
+         GetWindowPlacement(h_wnd, &window_placement);
+         mLastMaximizedState = window_placement.showCmd == SW_SHOWMAXIMIZED;
+ 
+-        // We already know on what monitor we are (gets it on init or move)
+-        // Get info from that monitor
+-        RECT r = get<1>(mMonitor);
++        // Display handles/bounds can change when replacing a monitor with a TV.
++        // Query the window's current display instead of trusting cached geometry.
++        monitor_list = GetMonitorList();
++        const HMONITOR monitor = MonitorFromWindow(h_wnd, MONITOR_DEFAULTTONEAREST);
++        MONITORINFO info = {};
++        info.cbSize = sizeof(info);
++        if (!GetMonitorInfo(monitor, &info) || info.rcMonitor.right <= info.rcMonitor.left ||
++            info.rcMonitor.bottom <= info.rcMonitor.top) return;
++        mMonitor = {monitor, info.rcMonitor, (info.dwFlags & MONITORINFOF_PRIMARY) != 0};
++        GetMonitorHzPeriod(mMonitor, mDetectedHz, mDisplayPeriod);
++        RECT r = info.rcMonitor;
++        SPDLOG_INFO("Fullscreen current display: {}x{} at ({},{}), {} Hz",
++            r.right - r.left, r.bottom - r.top, r.left, r.top, mDetectedHz);
+ 
+         // Set borderless full screen to that monitor
+         SetWindowLongPtr(h_wnd, GWL_STYLE, WS_VISIBLE | WS_POPUP);
+@@ -588,6 +600,31 @@ void GfxWindowBackendDXGI::Init(const char* game_name, const char* gfx_api_name,
+ 
+     ATOM winclass = RegisterClassExW(&wcex);
+ 
++    // Recover stale TV/span placement on startup. Start on the current primary
++    // display and keep the normal window entirely within its work area.
++    MONITORINFO startupMonitor = {};
++    startupMonitor.cbSize = sizeof(startupMonitor);
++    if (GetMonitorInfo(MonitorFromPoint(POINT{0, 0}, MONITOR_DEFAULTTOPRIMARY), &startupMonitor)) {
++        const RECT area = startupMonitor.rcWork;
++        RECT frame = {0, 0, 0, 0};
++        AdjustWindowRect(&frame, WS_OVERLAPPEDWINDOW, FALSE);
++        const uint32_t maxWidth = static_cast<uint32_t>(std::max<LONG>(320, area.right - area.left - (frame.right - frame.left)));
++        const uint32_t maxHeight = static_cast<uint32_t>(std::max<LONG>(240, area.bottom - area.top - (frame.bottom - frame.top)));
++        width = std::min(std::max(width, 320U), maxWidth);
++        height = std::min(std::max(height, 240U), maxHeight);
++        if (posX + frame.left < area.left || posY + frame.top < area.top ||
++            int64_t(posX) + width + frame.right > area.right ||
++            int64_t(posY) + height + frame.bottom > area.bottom) {
++            posX = area.left + (area.right - area.left - static_cast<LONG>(width)) / 2;
++            posY = area.top - frame.top + (area.bottom - area.top -
++                static_cast<LONG>(height) - (frame.bottom - frame.top)) / 2;
++        }
++        auto config = Ship::Context::GetRawInstance()->GetConfig();
++        config->SetInt("Window.Width", static_cast<int32_t>(width));
++        config->SetInt("Window.Height", static_cast<int32_t>(height));
++        config->SetInt("Window.PositionX", posX);
++        config->SetInt("Window.PositionY", posY);
++    }
+     RECT wr = { 0, 0, width, height };
+     AdjustWindowRect(&wr, WS_OVERLAPPEDWINDOW, FALSE);
+     current_width = wr.right - wr.left;
+@@ -626,7 +663,7 @@ void GfxWindowBackendDXGI::Init(const char* game_name, const char* gfx_api_name,
+ }
+ 
+ void GfxWindowBackendDXGI::SetFullscreenChangedCallback(void (*mOnFullscreenChanged)(bool is_now_fullscreen)) {
+-    mOnFullscreenChanged = mOnFullscreenChanged;
++    this->mOnFullscreenChanged = mOnFullscreenChanged;
+ }
+ 
+ void GfxWindowBackendDXGI::SetCursorVisibility(bool visible) {
+@@ -789,6 +826,15 @@ static uint64_t qpc_to_100ns(uint64_t qpc) {
+ }
+ 
+ bool GfxWindowBackendDXGI::IsFrameReady() {
++    if (Ship::Context::GetRawInstance()->GetWindow()->IsFastForward()) {
++        LARGE_INTEGER now;
++        QueryPerformanceCounter(&now);
++        mFrameTimeStamp = qpc_to_ns(now.QuadPart - qpc_init) * mTargetFps;
++        mFrameStats.clear();
++        mPendingFrameStats.clear();
++        mDroppedFrame = false;
++        return true;
++    }
+     DXGI_FRAME_STATISTICS stats;
+     if (swap_chain->GetFrameStatistics(&stats) == S_OK &&
+         (stats.SyncRefreshCount != 0 || stats.SyncQPCTime.QuadPart != 0ULL)) {
+@@ -915,6 +961,12 @@ bool GfxWindowBackendDXGI::IsFrameReady() {
+ }
+ 
+ void GfxWindowBackendDXGI::SwapBuffersBegin() {
++    if (Ship::Context::GetRawInstance()->GetWindow()->IsFastForward()) {
++        QueryPerformanceCounter(&mPreviousPresentTime);
++        ThrowIfFailed(swap_chain->Present(0, mTearingSupport ? DXGI_PRESENT_ALLOW_TEARING : 0));
++        mDroppedFrame = false;
++        return;
++    }
+     // mLengthInVsyncFrames (now mVsyncEnabled) was used as present interval. Present interval >1 (aka fractional
+     // V-Sync) breaks VRR and introduces even more input lag than capping via normal V-Sync does. Get the present
+     // interval the user wants instead (V-Sync toggle).
+@@ -956,6 +1008,7 @@ void GfxWindowBackendDXGI::SwapBuffersBegin() {
+ }
+ 
+ void GfxWindowBackendDXGI::SwapBuffersEnd() {
++    if (Ship::Context::GetRawInstance()->GetWindow()->IsFastForward()) return;
+     LARGE_INTEGER t0, t1, t2;
+     QueryPerformanceCounter(&t0);
+     QueryPerformanceCounter(&t1);
+diff --git a/src/fast/backends/gfx_sdl2.cpp b/src/fast/backends/gfx_sdl2.cpp
+index 15c5415..71e47be 100644
+--- a/src/fast/backends/gfx_sdl2.cpp
++++ b/src/fast/backends/gfx_sdl2.cpp
+@@ -739,6 +739,8 @@ void GfxWindowBackendSDL2::SyncFramerateWithTime() const {
+ 
+ void GfxWindowBackendSDL2::SwapBuffersBegin() {
+     bool nextVsyncEnabled = Ship::Context::GetRawInstance()->GetConsoleVariables()->GetInteger(CVAR_VSYNC_ENABLED, 1);
++    const bool fastForward = Ship::Context::GetRawInstance()->GetWindow()->IsFastForward();
++    if (fastForward) nextVsyncEnabled = false;
+ 
+     if (mVsyncEnabled != nextVsyncEnabled) {
+         mVsyncEnabled = nextVsyncEnabled;
+@@ -746,7 +748,7 @@ void GfxWindowBackendSDL2::SwapBuffersBegin() {
+         SDL_RenderSetVSync(mRenderer, mVsyncEnabled ? 1 : 0);
+     }
+ 
+-    SyncFramerateWithTime();
++    if (!fastForward) SyncFramerateWithTime();
+     SDL_GL_SwapWindow(mWnd);
+ }
+ 
+diff --git a/src/fast/interpreter.cpp b/src/fast/interpreter.cpp
+index 04dff04..8032c1a 100644
+--- a/src/fast/interpreter.cpp
++++ b/src/fast/interpreter.cpp
+@@ -5466,4 +5466,4 @@ extern "C" void gfx_register_fb_texture(const void* cpuAddr, int fbId) {
+ 
+ extern "C" void gfx_unregister_fb_texture(const void* cpuAddr) {
+     Fast::mInstance.lock().get()->UnregisterFbTexture(cpuAddr);
+-}
+\ No newline at end of file
++}
 diff --git a/src/libultraship/window/gui/InputEditorWindow.cpp b/src/libultraship/window/gui/InputEditorWindow.cpp
-index 54948e1..b527a22 100644
+index 54948e1..90d7587 100644
 --- a/src/libultraship/window/gui/InputEditorWindow.cpp
 +++ b/src/libultraship/window/gui/InputEditorWindow.cpp
-@@ -1251,6 +1251,11 @@ void InputEditorWindow::DrawClearAllButton(uint8_t portIndex) {
+@@ -1207,6 +1207,7 @@ void InputEditorWindow::DrawDeviceToggles(uint8_t portIndex) {
+ 
+     auto connectedDeviceManager =
+         Ship::Context::GetRawInstance()->GetControlDeck()->GetConnectedPhysicalDeviceManager();
++    ImGui::TextWrapped("Device checkboxes are saved for this player. New controllers use separate player ports.");
+     for (const auto& [instanceId, name] : connectedDeviceManager->GetConnectedSDLGamepadNames()) {
+         ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+         auto buttonColor = ImGui::GetStyleColorVec4(ImGuiCol_Button);
+@@ -1251,6 +1252,11 @@ void InputEditorWindow::DrawClearAllButton(uint8_t portIndex) {
  
  void InputEditorWindow::DrawPortTab(uint8_t portIndex) {
      if (ImGui::BeginTabItem(StringHelper::Sprintf("Port %d###port%d", portIndex + 1, portIndex).c_str())) {
@@ -146,7 +460,7 @@ index 54948e1..b527a22 100644
          DrawClearAllButton(portIndex);
          DrawSetDefaultsButton(portIndex);
          DrawDeviceToggles(portIndex);
-@@ -1413,8 +1418,8 @@ void InputEditorWindow::DrawSetDefaultsButton(uint8_t portIndex) {
+@@ -1413,8 +1419,8 @@ void InputEditorWindow::DrawSetDefaultsButton(uint8_t portIndex) {
  }
  
  void InputEditorWindow::DrawElement() {
@@ -158,21 +472,143 @@ index 54948e1..b527a22 100644
      }
      ImGui::EndTabBar();
 diff --git a/src/ship/controller/physicaldevice/ConnectedPhysicalDeviceManager.cpp b/src/ship/controller/physicaldevice/ConnectedPhysicalDeviceManager.cpp
-index 7f0397e..8fe4727 100644
+index 7f0397e..ee10833 100644
 --- a/src/ship/controller/physicaldevice/ConnectedPhysicalDeviceManager.cpp
 +++ b/src/ship/controller/physicaldevice/ConnectedPhysicalDeviceManager.cpp
-@@ -1,5 +1,6 @@
+@@ -1,5 +1,9 @@
  #include "ship/controller/physicaldevice/ConnectedPhysicalDeviceManager.h"
  #include <spdlog/spdlog.h>
 +#include <utility>
++#include <algorithm>
++#include "ship/Context.h"
++#include "ship/config/Config.h"
  
  namespace Ship {
  ConnectedPhysicalDeviceManager::ConnectedPhysicalDeviceManager() {
-@@ -50,8 +51,20 @@ void ConnectedPhysicalDeviceManager::HandlePhysicalDeviceDisconnect(int32_t sdlJ
+@@ -8,37 +12,109 @@ ConnectedPhysicalDeviceManager::ConnectedPhysicalDeviceManager() {
+ ConnectedPhysicalDeviceManager::~ConnectedPhysicalDeviceManager() {
+ }
+ 
+-std::unordered_map<int32_t, SDL_GameController*>
+-ConnectedPhysicalDeviceManager::GetConnectedSDLGamepadsForPort(uint8_t portIndex) {
+-    std::unordered_map<int32_t, SDL_GameController*> result;
++const std::unordered_map<int32_t, SDL_GameController*>&
++ConnectedPhysicalDeviceManager::GetConnectedSDLGamepadsForPort(uint8_t portIndex) const {
++    static const std::unordered_map<int32_t, SDL_GameController*> empty;
++    return portIndex < mGamepadsForPort.size() ? mGamepadsForPort[portIndex] : empty;
++}
+ 
++void ConnectedPhysicalDeviceManager::RebuildGamepadsForPort(uint8_t portIndex) {
++    auto& gamepads = mGamepadsForPort[portIndex];
++    gamepads.clear();
+     for (const auto& [instanceId, gamepad] : mConnectedSDLGamepads) {
+         if (!PortIsIgnoringInstanceId(portIndex, instanceId)) {
+-            result[instanceId] = gamepad;
++            gamepads.emplace(instanceId, gamepad);
+         }
+     }
++}
+ 
+-    return result;
++void ConnectedPhysicalDeviceManager::RebuildGamepadsForAllPorts() {
++    for (uint8_t port = 0; port < mGamepadsForPort.size(); ++port) {
++        RebuildGamepadsForPort(port);
++    }
+ }
+ 
+ std::unordered_map<int32_t, std::string> ConnectedPhysicalDeviceManager::GetConnectedSDLGamepadNames() {
+     return mConnectedSDLGamepadNames;
+ }
+ 
+-std::unordered_set<int32_t> ConnectedPhysicalDeviceManager::GetIgnoredInstanceIdsForPort(uint8_t portIndex) {
+-    return mIgnoredInstanceIds[portIndex];
++const std::unordered_set<int32_t>& ConnectedPhysicalDeviceManager::GetIgnoredInstanceIdsForPort(uint8_t portIndex) const {
++    static const std::unordered_set<int32_t> empty;
++    const auto it = mIgnoredInstanceIds.find(portIndex);
++    return it != mIgnoredInstanceIds.end() ? it->second : empty;
+ }
+ 
+-bool ConnectedPhysicalDeviceManager::PortIsIgnoringInstanceId(uint8_t portIndex, int32_t instanceId) {
++bool ConnectedPhysicalDeviceManager::PortIsIgnoringInstanceId(uint8_t portIndex, int32_t instanceId) const {
+     return GetIgnoredInstanceIdsForPort(portIndex).contains(instanceId);
+ }
+ 
+ void ConnectedPhysicalDeviceManager::IgnoreInstanceIdForPort(uint8_t portIndex, int32_t instanceId) {
++    if (portIndex >= 16 || !mDeviceKeys.contains(instanceId)) return;
+     mIgnoredInstanceIds[portIndex].insert(instanceId);
++    RebuildGamepadsForPort(portIndex);
++    mRememberedIgnoredPorts[mDeviceKeys.at(instanceId)] |= uint16_t(1u << portIndex);
++    SaveAssignments();
+ }
+ 
+ void ConnectedPhysicalDeviceManager::UnignoreInstanceIdForPort(uint8_t portIndex, int32_t instanceId) {
++    if (portIndex >= 16 || !mDeviceKeys.contains(instanceId)) return;
+     mIgnoredInstanceIds[portIndex].erase(instanceId);
++    RebuildGamepadsForPort(portIndex);
++    mRememberedIgnoredPorts[mDeviceKeys.at(instanceId)] &= uint16_t(~(1u << portIndex));
++    SaveAssignments();
++}
++
++void ConnectedPhysicalDeviceManager::LoadAssignments() {
++    if (mAssignmentsLoaded) return;
++    mAssignmentsLoaded = true;
++    const auto root = Context::GetRawInstance()->GetConfig()->GetNestedJson();
++    if (!root.contains("ControllerDeviceAssignments")) return;
++    const auto& block = root["ControllerDeviceAssignments"];
++    if (!block.is_object() || !block.contains("Devices") || !block["Devices"].is_array()) return;
++    for (const auto& device : block["Devices"]) {
++        if (!device.is_object() || !device.contains("Key") || !device["Key"].is_string() ||
++            !device.contains("IgnoredPorts") || !device["IgnoredPorts"].is_number_unsigned()) continue;
++        const auto mask = device["IgnoredPorts"].get<uint64_t>();
++        if (mask <= 0xFFFFu) mRememberedIgnoredPorts[device["Key"].get<std::string>()] = uint16_t(mask);
++    }
++}
++
++void ConnectedPhysicalDeviceManager::SaveAssignments() {
++    nlohmann::json devices = nlohmann::json::array();
++    for (const auto& [key, mask] : mRememberedIgnoredPorts)
++        devices.push_back({{"Key", key}, {"IgnoredPorts", mask}});
++    Context::GetRawInstance()->GetConfig()->SetBlock("ControllerDeviceAssignments",
++        {{"Version", 1}, {"Devices", devices}});
++}
++
++void ConnectedPhysicalDeviceManager::ApplyAssignments() {
++    mIgnoredInstanceIds.clear();
++    for (const auto& [instance, key] : mDeviceKeys)
++        for (uint8_t port = 0; port < 16; ++port)
++            if (mRememberedIgnoredPorts.at(key) & (1u << port)) mIgnoredInstanceIds[port].insert(instance);
++    RebuildGamepadsForAllPorts();
++}
++
++std::vector<std::string> ConnectedPhysicalDeviceManager::GetEnabledDeviceKeysForPort(uint8_t portIndex) {
++    LoadAssignments();
++    std::vector<std::string> keys;
++    if (portIndex < 16)
++        for (const auto& [key, mask] : mRememberedIgnoredPorts)
++            if (!(mask & (1u << portIndex))) keys.push_back(key);
++    return keys;
++}
++
++void ConnectedPhysicalDeviceManager::SetEnabledDeviceKeysForPort(uint8_t portIndex,
++                                                              const std::vector<std::string>& keys) {
++    if (portIndex >= 16) return;
++    LoadAssignments();
++    for (auto& [key, mask] : mRememberedIgnoredPorts) mask |= uint16_t(1u << portIndex);
++    for (const auto& key : keys) {
++        auto [it, inserted] = mRememberedIgnoredPorts.try_emplace(key, 0xFFFFu);
++        it->second &= uint16_t(~(1u << portIndex));
++    }
++    ApplyAssignments();
++    SaveAssignments();
+ }
+ 
+ void ConnectedPhysicalDeviceManager::HandlePhysicalDeviceConnect(int32_t sdlDeviceIndex) {
+@@ -50,9 +126,23 @@ void ConnectedPhysicalDeviceManager::HandlePhysicalDeviceDisconnect(int32_t sdlJ
  }
  
  void ConnectedPhysicalDeviceManager::RefreshConnectedSDLGamepads() {
 -    mConnectedSDLGamepads.clear();
++    LoadAssignments();
 +    // SDL instance IDs change on reconnect. Remember each physical device's
 +    // port choices before rebuilding the live list, including ignored port 1.
 +    for (const auto& [instanceId, key] : mDeviceKeys) {
@@ -188,9 +624,11 @@ index 7f0397e..8fe4727 100644
 +    mDeviceKeys.clear();
 +    mIgnoredInstanceIds.clear();
      static SDL_JoystickGUID sZeroGuid;
++    std::unordered_map<std::string, unsigned> modelSlots;
  
      for (int32_t i = 0; i < SDL_NumJoysticks(); i++) {
-@@ -76,7 +89,10 @@ void ConnectedPhysicalDeviceManager::RefreshConnectedSDLGamepads() {
+ 
+@@ -76,7 +166,10 @@ void ConnectedPhysicalDeviceManager::RefreshConnectedSDLGamepads() {
              continue;
          }
  
@@ -202,7 +640,7 @@ index 7f0397e..8fe4727 100644
          if (gamepad == nullptr) {
              SPDLOG_ERROR("SDL GameControllerOpen error (GUID: {}): {}", deviceGuidCStr, SDL_GetError());
              continue;
-@@ -85,6 +101,7 @@ void ConnectedPhysicalDeviceManager::RefreshConnectedSDLGamepads() {
+@@ -85,6 +178,7 @@ void ConnectedPhysicalDeviceManager::RefreshConnectedSDLGamepads() {
          auto instanceId = SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(gamepad));
          if (instanceId < 0) {
              SPDLOG_ERROR("SDL JoystickInstanceID error (GUID: {}): {}", deviceGuidCStr, SDL_GetError());
@@ -210,7 +648,7 @@ index 7f0397e..8fe4727 100644
              continue;
          }
  
-@@ -99,10 +116,27 @@ void ConnectedPhysicalDeviceManager::RefreshConnectedSDLGamepads() {
+@@ -99,10 +193,46 @@ void ConnectedPhysicalDeviceManager::RefreshConnectedSDLGamepads() {
  
          mConnectedSDLGamepads[instanceId] = gamepad;
          mConnectedSDLGamepadNames[instanceId] = gamepadName;
@@ -223,21 +661,62 @@ index 7f0397e..8fe4727 100644
 +        if (serial && *serial) key += "|serial:" + std::string(serial);
 +        else if (path && *path) key += "|path:" + std::string(path);
 +        else {
-+            // Without a serial or device path, identical pads cannot safely be
-+            // distinguished after reconnect. Preserve live instances only.
++            // Some drivers expose no persistent identity. Use a model slot,
++            // preserving live instances when another controller is hotplugged.
 +            const auto previousKey = previousDeviceKeys.find(instanceId);
 +            if (previousKey != previousDeviceKeys.end()) key = previousKey->second;
-+            else key += "|instance:" + std::to_string(instanceId);
++            else {
++                const auto base = key;
++                do { key = base + "|slot:" + std::to_string(modelSlots[base]++); }
++                while (std::any_of(previousDeviceKeys.begin(), previousDeviceKeys.end(),
++                    [&](const auto& entry) {
++                        auto pad = SDL_GameControllerFromInstanceID(entry.first);
++                        return entry.second == key && pad && SDL_GameControllerGetAttached(pad);
++                    }) || std::any_of(mDeviceKeys.begin(), mDeviceKeys.end(),
++                        [&](const auto& entry) { return entry.second == key; }));
++            }
 +        }
 +        mDeviceKeys[instanceId] = key;
-+        const auto remembered = mRememberedIgnoredPorts.find(key);
-+        const uint16_t ignored = remembered == mRememberedIgnoredPorts.end() ? 0xFFFEu : remembered->second;
++        if (!mRememberedIgnoredPorts.contains(key)) {
++            uint16_t occupied = 0;
++            for (const auto& [savedKey, mask] : mRememberedIgnoredPorts) occupied |= uint16_t(~mask);
++            uint16_t ignored = 0xFFFFu;
++            for (uint8_t port = 0; port < 16; ++port)
++                if (!(occupied & (1u << port))) { ignored &= uint16_t(~(1u << port)); break; }
++            mRememberedIgnoredPorts[key] = ignored;
++        }
++        const uint16_t ignored = mRememberedIgnoredPorts.at(key);
 +        for (uint8_t port = 0; port < 16; ++port) {
 +            if (ignored & (1u << port)) mIgnoredInstanceIds[port].insert(instanceId);
          }
      }
++    // Refresh cached port lists before closing handles that were disconnected.
++    RebuildGamepadsForAllPorts();
 +    // Keep existing handles instead of opening another reference on every
 +    // hotplug event, and close only devices that left the live list.
 +    for (const auto& [instanceId, gamepad] : previousGamepads) SDL_GameControllerClose(gamepad);
++    SaveAssignments();
  }
  } // namespace Ship
+diff --git a/src/ship/window/Window.cpp b/src/ship/window/Window.cpp
+index fc47182..bfff3cc 100644
+--- a/src/ship/window/Window.cpp
++++ b/src/ship/window/Window.cpp
+@@ -5,6 +5,7 @@
+ #include "ship/controller/controldevice/controller/mapping/keyboard/KeyboardScancodes.h"
+ #include "ship/Context.h"
+ #include "ship/controller/controldeck/ControlDeck.h"
++#include "fast/Fast3dGui.h"
+ 
+ #ifdef __APPLE__
+ #include "ship/utils/AppleFolderManager.h"
+@@ -54,6 +55,9 @@ std::shared_ptr<Gui> Window::GetGui() {
+ }
+ 
+ void Window::SaveWindowToConfig() {
++    // A multiplayer desktop span is temporary, not the preferred startup size.
++    auto fastGui = std::dynamic_pointer_cast<Fast::Fast3dGui>(mGui);
++    if (fastGui && fastGui->IsDisplaySpanActive()) return;
+     // This accepts conf in because it can be run in the destruction of LUS.
+     mConfig->SetBool("Window.Fullscreen.Enabled", IsFullscreen());
+     if (IsFullscreen()) {

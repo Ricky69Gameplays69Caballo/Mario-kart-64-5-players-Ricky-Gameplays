@@ -299,6 +299,7 @@ void func_800CA0A0(void);
 void func_800CA0B8(void);
 void func_800CA0CC(void);
 void func_800CA0E4(void);
+void Audio_StopExpandedRaceSounds(void);
 void func_800CA118(u8);
 void func_800CA24C(u8);
 void func_800CA270(void);

@@ -192,7 +192,7 @@ void FrappeSnowland::Draw(ScreenContext* arg0) {
 
     gDPSetCombineMode(gDisplayListHead++, G_CC_MODULATEIA, G_CC_MODULATEIA);
     gDPSetRenderMode(gDisplayListHead++, G_RM_AA_ZB_OPA_SURF, G_RM_AA_ZB_OPA_SURF2);
-    render_track_sections(d_course_frappe_snowland_dl_list, arg0);
+    render_track_sections(d_course_frappe_snowland_dl_list, arg0, sizeof(d_course_frappe_snowland_dl_list) / sizeof(d_course_frappe_snowland_dl_list[0]));
 }
 
 void FrappeSnowland::DrawCredits() {

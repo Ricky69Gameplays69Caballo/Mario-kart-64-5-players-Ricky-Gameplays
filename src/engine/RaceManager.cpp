@@ -10,6 +10,7 @@
 
 extern "C" {
 #include "racing/render_courses.h"
+#include "racing/math_util.h"
 }
 
 RaceManager::RaceManager(World& world) : WorldContext(world) {
@@ -178,6 +179,16 @@ void RaceManager::SetItemTables() {
     printf("[RaceManager] Selected cpu item probability table %s\n", cpuTableName.value_or("none").c_str());
 }
 
+static int16_t RollRaceItem(const RandomItemTable& table, uint32_t rank) {
+    const auto item = table.Roll(rank);
+    // Keep one quarter of Lightning awards in sixteen-player mode, half of
+    // the previous reduced chance. Redistribute rejected draws among other
+    // eligible items without allowing that replacement roll to pick Lightning.
+    if (MultiplayerOptions_SixteenEnabled() && item == ITEM_THUNDERBOLT && random_u16() < 0xC000)
+        return table.Roll(rank, true);
+    return item;
+}
+
 extern "C" int16_t RaceManager_GetRandomHumanItem(uint32_t rank) {
     auto& raceManager = GetWorld()->GetRaceManager();
 
@@ -189,7 +200,7 @@ extern "C" int16_t RaceManager_GetRandomHumanItem(uint32_t rank) {
 
     if (LocalMP_IsActive() && LocalMP_RacerCount() > NUM_PLAYERS)
         rank = std::min<uint32_t>(NUM_PLAYERS - 1, rank * NUM_PLAYERS / LocalMP_RacerCount());
-    return table->Roll(rank);
+    return RollRaceItem(*table, rank);
 }
 
 extern "C" int16_t RaceManager_GetRandomCPUItem(uint32_t rank) {
@@ -202,5 +213,5 @@ extern "C" int16_t RaceManager_GetRandomCPUItem(uint32_t rank) {
 
     if (LocalMP_IsActive() && LocalMP_RacerCount() > NUM_PLAYERS)
         rank = std::min<uint32_t>(NUM_PLAYERS - 1, rank * NUM_PLAYERS / LocalMP_RacerCount());
-    return table->Roll(rank);
+    return RollRaceItem(*table, rank);
 }

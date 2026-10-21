@@ -37,12 +37,12 @@ BOOL CALLBACK FindMonitor(HMONITOR monitor, HDC, LPRECT, LPARAM data) {
 }
 void Restore() {
     if (applied <= 1 || !IsWindow(gameWindow)) return;
+    auto gui = std::dynamic_pointer_cast<Fast::Fast3dGui>(Ship::Context::GetRawInstance()->GetWindow()->GetGui());
+    if (gui) gui->SetDisplaySpanActive(false);
     SetWindowLongPtr(gameWindow, GWL_STYLE, savedStyle);
     SetWindowPlacement(gameWindow, &savedPlacement);
     SetWindowPos(gameWindow, nullptr, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
     if (savedFullscreen) Ship::Context::GetRawInstance()->GetWindow()->SetFullscreen(true);
-    auto gui = std::dynamic_pointer_cast<Fast::Fast3dGui>(Ship::Context::GetRawInstance()->GetWindow()->GetGui());
-    if (gui) gui->SetDisplaySpanActive(false);
 }
 #endif
 int LogicalEdge(int value, int extent, int pixels) {
@@ -95,6 +95,8 @@ extern "C" void MultiplayerDisplays_Update(void) {
     savedStyle = GetWindowLongPtr(gameWindow, GWL_STYLE);
     GetWindowPlacement(gameWindow, &savedPlacement);
     savedFullscreen = Ship::Context::GetRawInstance()->GetWindow()->IsFullscreen();
+    auto gui = std::dynamic_pointer_cast<Fast::Fast3dGui>(Ship::Context::GetRawInstance()->GetWindow()->GetGui());
+    if (gui) gui->SetDisplaySpanActive(true);
     if (savedFullscreen) Ship::Context::GetRawInstance()->GetWindow()->SetFullscreen(false);
     // The same render surface spans the selected displays, so controllers,
     // race simulation and frame timing remain shared across all players.
@@ -102,6 +104,7 @@ extern "C" void MultiplayerDisplays_Update(void) {
     if (!SetWindowPos(gameWindow, HWND_NOTOPMOST, bounds.left, bounds.top,
                       bounds.right - bounds.left, bounds.bottom - bounds.top,
                       SWP_FRAMECHANGED | SWP_NOACTIVATE)) {
+        if (gui) gui->SetDisplaySpanActive(false);
         SetWindowLongPtr(gameWindow, GWL_STYLE, savedStyle);
         SetWindowPlacement(gameWindow, &savedPlacement);
         if (savedFullscreen) Ship::Context::GetRawInstance()->GetWindow()->SetFullscreen(true);
@@ -110,7 +113,6 @@ extern "C" void MultiplayerDisplays_Update(void) {
     }
     applied = wanted;
     // Fill the span and cap its render surface without changing saved graphics preferences.
-    auto gui = std::dynamic_pointer_cast<Fast::Fast3dGui>(Ship::Context::GetRawInstance()->GetWindow()->GetGui());
     if (gui) gui->SetDisplaySpanActive(true);
     status = wanted == 2 ? "Game window spans two screens" : "Game window spans three screens";
 #else

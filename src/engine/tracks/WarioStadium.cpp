@@ -252,7 +252,7 @@ void WarioStadium::Draw(ScreenContext* arg0) {
     gDPSetCombineMode(gDisplayListHead++, G_CC_MODULATERGBA, G_CC_MODULATERGBA);
     gDPSetRenderMode(gDisplayListHead++, G_RM_AA_ZB_OPA_SURF, G_RM_AA_ZB_OPA_SURF2);
 
-    render_track_sections(wario_stadium_dls, arg0);
+    render_track_sections(wario_stadium_dls, arg0, sizeof(wario_stadium_dls) / sizeof(wario_stadium_dls[0]));
 
     // d_course_wario_stadium_packed_dl_A228
     gSPDisplayList(gDisplayListHead++, (Gfx*) d_course_wario_stadium_packed_dl_A228);

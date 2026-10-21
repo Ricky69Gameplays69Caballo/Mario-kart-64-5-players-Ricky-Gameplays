@@ -4,6 +4,7 @@
 #include <ship/window/gui/Gui.h>
 #include <ship/window/Window.h>
 #include "ship/config/Config.h"
+#include <cstdio>
 
 #ifdef __APPLE__
 #include <SDL_hints.h>
@@ -156,6 +157,16 @@ void SpaghettiGui::DrawMenu() {
 
     ImGui::End();
     LocalMP_DrawUI();
+    if (CVarGetInteger("gShowFpsCounter", 0)) {
+        char label[32];
+        std::snprintf(label, sizeof(label), "FPS: %.0f", ImGui::GetIO().Framerate);
+        const ImVec2 position(viewport->Pos.x + 8.f, viewport->Pos.y + 8.f);
+        const ImVec2 size = ImGui::CalcTextSize(label);
+        auto* overlay = ImGui::GetForegroundDrawList(ImGui::GetMainViewport());
+        overlay->AddRectFilled(position, ImVec2(position.x + size.x + 12.f, position.y + size.y + 8.f),
+                               IM_COL32(0, 0, 0, 175), 4.f);
+        overlay->AddText(ImVec2(position.x + 6.f, position.y + 4.f), IM_COL32(255, 255, 255, 255), label);
+    }
 }
 
 } // namespace Ship

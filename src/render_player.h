@@ -271,6 +271,8 @@ extern s16 D_80165020[40];
 extern Vec3f gPlayerLastVelocity[NUM_RACERS];
 extern s16 gLastAnimFrameSelector[MAX_HUMAN_PLAYERS][NUM_RACERS];
 extern s16 gLastAnimGroupSelector[MAX_HUMAN_PLAYERS][NUM_RACERS];
+extern u8 gLastWheelFramesAlternate[MAX_HUMAN_PLAYERS][NUM_RACERS];
+s32 kart_uses_alternate_wheel_frames(const Player* player);
 extern s16 D_80165150[MAX_HUMAN_PLAYERS][NUM_RACERS];
 extern s16 D_80165190[MAX_HUMAN_PLAYERS][NUM_RACERS];
 extern s16 D_801651D0[MAX_HUMAN_PLAYERS][NUM_RACERS];

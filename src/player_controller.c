@@ -401,7 +401,7 @@ void func_80028E70(Player* player, Camera* camera, s8 playerId, s8 screenId) {
                 switch (gModeSelection) {
                     case TIME_TRIALS:
                     case VERSUS:
-                        if (LocalMP_IsActive() && (player->type & PLAYER_CPU)) {
+                        if ((LocalMP_IsActive() || LocalMP_IsAfkBot(playerId)) && (player->type & PLAYER_CPU)) {
                             func_80028864(player, camera, playerId, screenId);
                         } else {
                             func_80028C44(player, camera, playerId, screenId);
@@ -427,7 +427,8 @@ void func_80028F70(void) {
     if (LocalMP_IsActive()) {
         gMatrixEffectCount = 0;
         for (s8 i = 0; i < LocalMP_RacerCount(); i++) {
-            if (!LocalMP_IsFinished(i)) func_80028E70(&gPlayers[i], i < LocalMP_Count() ? &cameras[i] : camera1, i, 0);
+            if (!LocalMP_IsFinished(i) || LocalMP_CanCoastAfterFinish(i))
+                func_80028E70(&gPlayers[i], i < LocalMP_Count() ? &cameras[i] : camera1, i, 0);
         }
         return;
     }
@@ -605,6 +606,11 @@ void func_8002934C(Player* player, Camera* camera, s8 screenId, s8 playerId) {
             ((D_80165190[screenId][playerId]) == 0)) {
             player->unk_002 &= ~(CHANGING_ANIMATION << (screenId * 4));
         }
+    }
+    // Switching texture layouts must refresh even if the frame number matches.
+    if (kart_uses_alternate_wheel_frames(player) != gLastWheelFramesAlternate[screenId][playerId]) {
+        player->unk_002 |= CHANGING_ANIMATION << (screenId * 4);
+        D_80165190[screenId][playerId] = 1;
     }
     temp_a0_2 = gLastAnimFrameSelector[screenId][playerId] - player->animFrameSelector[screenId];
     if ((temp_a0_2 >= 0x14) || (temp_a0_2 < (-0x13))) {

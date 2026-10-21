@@ -603,11 +603,13 @@ void race_begin_viewport_4p(ScreenContext* screen) {
 void render_screens(ScreenContext* screen, s32 mode, s32 someId, s32 playerId) {
     Camera* camera = screen->camera;
     s32 screenId = screen - gScreenContexts;
-    // A larger CPU grid still uses the native HUD for up to four humans.
+    // Wide 3P uses viewport-anchored HUD elements; fixed quarter-screen
+    // counters would otherwise duplicate them and overlap the swapped views.
+    // Other native layouts can still use the HUD with a larger CPU grid.
     // The expanded viewport loop shares its render mode, so select the HUD
     // mode from the actual screen to draw each player's own item roulette.
     s32 nativeHUD = !LocalMP_IsActive() ||
-        (LocalMP_Count() <= 4 && (LocalMP_Count() == 1 || MultiplayerOptions_DisplayCount() == 1) &&
+        (LocalMP_Count() != 3 && LocalMP_Count() <= 4 && (LocalMP_Count() == 1 || MultiplayerOptions_DisplayCount() == 1) &&
          !LocalMP_BattleResultsOpen() && !LocalMP_RaceResultsOpen());
     s32 hudMode = LocalMP_IsActive() && LocalMP_Count() >= 3 && LocalMP_Count() <= 4
                       ? RENDER_SCREEN_MODE_3P_4P_PLAYER_ONE + screenId : mode;

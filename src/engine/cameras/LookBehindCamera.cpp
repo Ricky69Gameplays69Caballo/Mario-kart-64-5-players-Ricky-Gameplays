@@ -38,4 +38,5 @@ void LookBehindCamera::Tick() {
     }
 
     func_8001EE98(&gPlayers[_camera->playerId], _camera, _camera->cameraId);
+    KeepInFrontOfWalls();
 }

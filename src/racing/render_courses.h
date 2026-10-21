@@ -8,7 +8,7 @@
 void draw_transparent_geography(ScreenContext*, s32);
 s32 func_80290C20(Camera*);
 void parse_track_displaylists(TrackSections* asset);
-void render_track_sections(const char*[], ScreenContext*);
+void render_track_sections(const char*[], ScreenContext*, s32 displayListCount);
 void func_80291198(void);
 void render_track(ScreenContext*);
 void func_80295BF8(s32);

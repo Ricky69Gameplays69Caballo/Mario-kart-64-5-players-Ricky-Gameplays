@@ -659,6 +659,7 @@ void process_game_tick(void) {
     gTickCounter += 1;
 
     if (Editor_IsPaused() == false) {
+        LocalMP_UpdateAfk();
         if (D_8015011E) {
             gCourseTimer += TRACK_TIMER_ITER;
         }
@@ -687,6 +688,7 @@ void process_game_tick(void) {
     if (CM_IsTourEnabled() == false) {
         func_8028FCBC();
     }
+    LocalMP_RestoreAfkInput();
 }
 
 void race_logic_loop(void) {
@@ -801,7 +803,7 @@ void race_logic_loop(void) {
     display_debug_info();
 
     func_802A4300();
-    if ((!LocalMP_IsActive() || (LocalMP_Count() <= 4 &&
+    if ((!LocalMP_IsActive() || (LocalMP_Count() != 3 && LocalMP_Count() <= 4 &&
         (LocalMP_Count() == 1 || MultiplayerOptions_DisplayCount() == 1))) && !LocalMP_RaceResultsOpen()) func_800591B4();
     if (!LocalMP_IsActive()) func_80093E20();
     else {

@@ -213,7 +213,7 @@ void RoyalRaceway::Draw(ScreenContext* arg0) {
     // d_course_royal_raceway_packed_dl_A648
     gSPDisplayList(gDisplayListHead++, (Gfx*) d_course_royal_raceway_packed_dl_A648);
 
-    render_track_sections(royal_raceway_dls, arg0);
+    render_track_sections(royal_raceway_dls, arg0, sizeof(royal_raceway_dls) / sizeof(royal_raceway_dls[0]));
 
     // d_course_royal_raceway_packed_dl_11A8
     gSPDisplayList(gDisplayListHead++, (Gfx*) d_course_royal_raceway_packed_dl_11A8);

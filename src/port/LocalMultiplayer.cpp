@@ -9,7 +9,9 @@
 #include <cstdio>
 #include <limits>
 #include <numeric>
+#include <queue>
 #include <utility>
+#include <spdlog/spdlog.h>
 #include "port/Game.h"
 #include "port/Engine.h"
 #include "port/audio/HMAS.h"
@@ -36,6 +38,9 @@ extern "C" {
 #include "objects.h"
 #include "render_objects.h"
 #include "replays.h"
+#include "racing/math_util.h"
+#include "racing/collision.h"
+#include "actor_types.h"
 extern f32 gTimePlayerLastTouchedFinishLine[];
 }
 
@@ -93,6 +98,946 @@ std::array<bool, NUM_RACERS> estimatedTime = {};
 std::array<int, NUM_RACERS> points = {};
 bool progressDisplay = false; // C-right switches the one shared map/progress display.
 int sharedHUDPlayer = 0; // Highlight the player who last changed the shared display.
+struct AfkState {
+    double idleSeconds = 0;
+    double botSeconds = 0;
+    double stuckSeconds = 0;
+    bool driving = false;
+    bool inputReplaced = false;
+    u16 previousButtons = 0;
+    double battlePlanAt = 0;
+    double battleDebugAt = 0;
+    double battleFireAt = 0;
+    double battleRecoverUntil = 0;
+    bool battleBomb = false;
+    int battleTarget = -1;
+    int battleItem = -1;
+    int battlePatrol = -1;
+    double battlePatrolUntil = 0;
+    int battleBlockedPatrol = -1;
+    double battleBlockedPatrolUntil = 0;
+    FVector battleMotionGoal{};
+    double battleMotionAt = 0;
+    bool battleMotionSafe = false;
+    double battleRouteBlockedSeconds = 0;
+    bool battleReconnecting = false;
+    FVector battleReconnectGoal{};
+    double battleReconnectUntil = 0;
+    int battleBlockedItem = -1;
+    double battleBlockedItemUntil = 0;
+    int battleLastTurnError = 32768;
+    double battleTraceAt = 0;
+    bool battlePivoting = false;
+    s16 battlePivotYaw = 0;
+    int battleProgressIntent = -1000;
+    double battleGoalProgressAt = 0;
+    float battleBestRemaining = std::numeric_limits<float>::infinity();
+    float battleTravelSinceProgress = 0;
+    FVector battleLastPosition{};
+    double battleDefensiveSeconds = 0;
+    int battleBlockedTarget = -1;
+    double battleBlockedTargetUntil = 0;
+    int battleRecoveries = 0;
+    FVector battleProgress{};
+    FVector battleGoal{};
+    std::vector<int> battleRoute;
+    size_t battleWaypoint = 0;
+    struct Controller input{};
+};
+std::array<AfkState, MAX_HUMAN_PLAYERS> afkPlayers{};
+
+void ReleaseAfkPlayer(int id) {
+    auto& state = afkPlayers[id];
+    auto& player = gPlayers[id];
+    if (state.driving && (player.type & PLAYER_HUMAN) &&
+        !(player.type & PLAYER_CINEMATIC_MODE) && gModeSelection != BATTLE) {
+        player.type &= ~PLAYER_CPU;
+        player.effects &= ~DRIFTING_EFFECT;
+    }
+    state = {};
+}
+
+// Battle navigation uses the arena's collision surfaces, including separate
+// floors at the same X/Z. The graph is shared by all takeover bots in a match.
+struct BattleNode {
+    FVector pos;
+    std::vector<int> neighbours;
+};
+struct BattleNavigation {
+    bool built = false;
+    std::vector<BattleNode> nodes;
+    std::vector<float> distance;
+    std::vector<int> parent;
+};
+BattleNavigation battleNavigation;
+
+FVector BattlePosition(const Player& player) {
+    return FVector(player.pos[0], player.pos[1], player.pos[2]);
+}
+
+float BattleDistance(const FVector& a, const FVector& b) {
+    const auto delta = a - b;
+    return std::sqrt(delta.Dot(delta));
+}
+
+bool VerticalBattleAI() {
+    return gModeSelection == BATTLE && (IsBlockFort() || IsDoubleDeck());
+}
+
+bool FlatBattleAI() {
+    return gModeSelection == BATTLE && (IsBigDonut() || IsSkyscraper());
+}
+
+// Unlike a highest-floor-below query, this identifies the surface on the
+// requested deck. Ramps remain floors even when native collision classifies
+// their dominant axis as X or Z rather than Y.
+bool BattleTriangleHeight(const CollisionTriangle& triangle, float x, float z, float& height) {
+    if (!triangle.vtx1 || !triangle.vtx2 || !triangle.vtx3 ||
+        x < triangle.minX - .1f || x > triangle.maxX + .1f ||
+        z < triangle.minZ - .1f || z > triangle.maxZ + .1f) return false;
+    const auto* a = triangle.vtx1->v.ob;
+    const auto* b = triangle.vtx2->v.ob;
+    const auto* c = triangle.vtx3->v.ob;
+    const float denominator = (b[2] - c[2]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[2] - c[2]);
+    if (std::abs(denominator) < .001f) return false;
+    const float u = ((b[2] - c[2]) * (x - c[0]) + (c[0] - b[0]) * (z - c[2])) / denominator;
+    const float v = ((c[2] - a[2]) * (x - c[0]) + (a[0] - c[0]) * (z - c[2])) / denominator;
+    if (u < -.001f || v < -.001f || u + v > 1.001f) return false;
+    height = u * a[1] + v * b[1] + (1.f - u - v) * c[1];
+    return true;
+}
+
+int BattleCollisionCell(float x, float z) {
+    const int cellX = (gTrackMaxX - gTrackMinX) / GRID_SIZE;
+    const int cellZ = (gTrackMaxZ - gTrackMinZ) / GRID_SIZE;
+    if (cellX <= 0 || cellZ <= 0 || x < gTrackMinX || z < gTrackMinZ) return -1;
+    const int ix = static_cast<int>((x - gTrackMinX) / cellX);
+    const int iz = static_cast<int>((z - gTrackMinZ) / cellZ);
+    return ix >= 0 && iz >= 0 && ix < GRID_SIZE && iz < GRID_SIZE ? iz * GRID_SIZE + ix : -1;
+}
+
+bool BattleDeckFloor(float x, float z, float reference, float& floor) {
+    const int cell = BattleCollisionCell(x, z);
+    if (cell < 0 || !gCollisionIndices) return false;
+    const auto& grid = gCollisionGrid[cell];
+    float best = 12.f;
+    bool found = false;
+    for (u32 i = 0; i < grid.numTriangles; ++i) {
+        const u16 index = gCollisionIndices[grid.triangle + i];
+        if (index >= gCollisionMeshCount) continue;
+        const auto& triangle = gCollisionMesh[index];
+        if (triangle.normalY < .55f || (triangle.flags & 0x1000)) continue;
+        float height;
+        if (!BattleTriangleHeight(triangle, x, z, height)) continue;
+        const float difference = std::abs(height - reference);
+        if (difference < best) { best = difference; floor = height; found = true; }
+    }
+    return found;
+}
+
+bool BattleCanDriveDecks(const FVector& from, const FVector& to) {
+    const auto delta = to - from;
+    const float length = std::sqrt(delta.x * delta.x + delta.z * delta.z);
+    if (std::abs(delta.y) > length * 1.45f + 3.f) return false;
+    const int samples = std::max(1, static_cast<int>(std::ceil(length / 6.f)));
+    const FVector side = length > .01f ? FVector(-delta.z / length * 7.f, 0, delta.x / length * 7.f) : FVector(7, 0, 0);
+    float previousFloor = from.y - 6.f;
+    float previousClearance = 0;
+    bool leavingWall = false;
+    bool corridorEstablished = false;
+    for (int sample = 0; sample <= samples; ++sample) {
+        auto point = from + delta * (static_cast<float>(sample) / samples);
+        float floor;
+        if (!BattleDeckFloor(point.x, point.z, point.y - 6.f, floor) ||
+            (sample > 0 && std::abs(floor - previousFloor) > 12.f)) return false;
+        previousFloor = floor;
+        point.y = floor + 6.f;
+        bool supportedSides = true;
+        for (int offset : {-1, 1}) {
+            float sideFloor;
+            const auto probe = point + side * static_cast<float>(offset);
+            if (!BattleDeckFloor(probe.x, probe.z, floor, sideFloor) || std::abs(sideFloor - floor) > 9.f) supportedSides = false;
+        }
+        // A real kart can be closer to a wall than the planning corridor's
+        // width. Its first side probe may lie inside the fort. Allow only the
+        // initial 18 units to leave that margin, keeping center-floor support
+        // throughout; once clear, never permit a new unsupported side.
+        if (!supportedSides && (corridorEstablished || sample * length / samples > 18.f || sample == samples)) return false;
+        if (supportedSides) corridorEstablished = true;
+        const int cell = BattleCollisionCell(point.x, point.z);
+        if (cell < 0) return false;
+        Collision collision{};
+        collision.meshIndexZX = collision.meshIndexYX = collision.meshIndexZY = 0xFFFF;
+        collision.surfaceDistance[0] = collision.surfaceDistance[1] = 1000.f;
+        const auto& grid = gCollisionGrid[cell];
+        for (u32 i = 0; i < grid.numTriangles; ++i) {
+            const u16 index = gCollisionIndices[grid.triangle + i];
+            if (index >= gCollisionMeshCount) continue;
+            const auto& triangle = gCollisionMesh[index];
+            // Do not mistake a drivable slope for a wall. Still reject low
+            // overhead surfaces so floors never connect through a ceiling.
+            if (triangle.normalY >= .55f) continue;
+            if (triangle.normalY <= -.55f) {
+                float ceiling;
+                if (BattleTriangleHeight(triangle, point.x, point.z, ceiling) &&
+                    ceiling > floor + 2.f && ceiling < floor + 16.f) return false;
+            } else if (triangle.flags & FACING_X_AXIS) {
+                check_collision_zy(&collision, 8.f, point.x, point.y, point.z, index);
+            } else if (triangle.flags & FACING_Z_AXIS) {
+                check_collision_yx(&collision, 8.f, point.x, point.y, point.z, index);
+            }
+        }
+        const float clearance = std::min(collision.surfaceDistance[0], collision.surfaceDistance[1]);
+        if (sample == 0 && clearance < 0) leavingWall = true;
+        if (clearance < 0 && (!leavingWall || (sample > 0 && clearance < previousClearance - .1f))) return false;
+        if (clearance >= 0) leavingWall = false;
+        if (sample == samples && clearance < 0) return false;
+        previousClearance = clearance;
+    }
+    return true;
+}
+
+// Sample the full kart corridor, not just endpoints: no cutting through thin
+// walls, diagonal corners, the donut hole or gaps between elevated platforms.
+bool BattleCanDrive(const FVector& from, const FVector& to) {
+    if (!gCollisionMesh || !gCollisionMeshCount) return false;
+    if (VerticalBattleAI()) return BattleCanDriveDecks(from, to);
+    const auto delta = to - from;
+    const float length = std::sqrt(delta.x * delta.x + delta.z * delta.z);
+    const int samples = std::max(1, static_cast<int>(std::ceil(length / 14.f)));
+    const FVector side = length > .01f ? FVector(-delta.z / length * 8.f, 0, delta.x / length * 8.f) : FVector(8, 0, 0);
+    float previousWallClearance = 0.f;
+    bool leavingWall = false;
+    for (int sample = 0; sample <= samples; ++sample) {
+        const auto point = from + delta * (static_cast<float>(sample) / samples);
+        for (int offset = -1; offset <= 1; ++offset) {
+            const auto probe = point + side * static_cast<float>(offset);
+            const float floor = spawn_actor_on_surface(probe.x, probe.y + 16.f, probe.z);
+            if (std::abs(floor + 6.f - point.y) > 18.f) return false;
+        }
+        Collision collision{};
+        collision.meshIndexZX = collision.meshIndexYX = collision.meshIndexZY = 0xFFFF;
+        check_bounding_collision(&collision, 9.f, point.x, point.y, point.z);
+        const float wallClearance = std::min(collision.surfaceDistance[0], collision.surfaceDistance[1]);
+        // The real kart is smaller than the planning corridor. A kart resting
+        // against a wall may start inside this margin; permit motion out of
+        // it, never deeper through the wall, and require a clear destination.
+        if (sample == 0 && wallClearance < 0.f) leavingWall = true;
+        if (wallClearance < 0.f) {
+            if (!leavingWall || (sample > 0 && wallClearance < previousWallClearance - .1f)) return false;
+        } else leavingWall = false;
+        if (sample == samples && wallClearance < 0.f) return false;
+        previousWallClearance = wallClearance;
+        if (collision.meshIndexZX < gCollisionMeshCount &&
+            (gCollisionMesh[collision.meshIndexZX].flags & 0x1000)) return false;
+    }
+    return true;
+}
+
+void BuildBattleNavigation() {
+    auto& nav = battleNavigation;
+    if (nav.built) return;
+    nav.built = true;
+    if (!gCollisionMesh || !gCollisionMeshCount) return;
+    float minX = 32767, maxX = -32768, minZ = 32767, maxZ = -32768;
+    for (u32 i = 0; i < gCollisionMeshCount; ++i) {
+        const auto& triangle = gCollisionMesh[i];
+        if (triangle.normalY < .55f || (triangle.flags & 0x1000)) continue;
+        minX = std::min(minX, static_cast<float>(triangle.minX));
+        maxX = std::max(maxX, static_cast<float>(triangle.maxX));
+        minZ = std::min(minZ, static_cast<float>(triangle.minZ));
+        maxZ = std::max(maxZ, static_cast<float>(triangle.maxZ));
+    }
+    if (minX >= maxX || minZ >= maxZ) return;
+    const bool vertical = VerticalBattleAI();
+    const float step = vertical ? std::max(24.f, std::max(maxX - minX, maxZ - minZ) / 180.f) :
+                                 std::max(48.f, std::max(maxX - minX, maxZ - minZ) / 120.f);
+    const int width = static_cast<int>((maxX - minX) / step) + 1;
+    const int depth = static_cast<int>((maxZ - minZ) / step) + 1;
+    std::vector<std::vector<int>> cells(width * depth);
+    // Rasterize upward-facing collision triangles into a bounded layered grid.
+    for (u32 i = 0; i < gCollisionMeshCount; ++i) {
+        const auto& triangle = gCollisionMesh[i];
+        if (triangle.normalY < .55f || (triangle.flags & 0x1000) ||
+            !triangle.vtx1 || !triangle.vtx2 || !triangle.vtx3) continue;
+        const auto vertex = [](const Vtx* v) { return FVector(v->v.ob[0], v->v.ob[1], v->v.ob[2]); };
+        const auto a = vertex(triangle.vtx1), b = vertex(triangle.vtx2), c = vertex(triangle.vtx3);
+        const float denominator = (b.z - c.z) * (a.x - c.x) + (c.x - b.x) * (a.z - c.z);
+        if (std::abs(denominator) < .001f) continue;
+        const int left = std::clamp(static_cast<int>((triangle.minX - minX) / step), 0, width - 1);
+        const int right = std::clamp(static_cast<int>((triangle.maxX - minX) / step) + 1, 0, width - 1);
+        const int top = std::clamp(static_cast<int>((triangle.minZ - minZ) / step), 0, depth - 1);
+        const int bottom = std::clamp(static_cast<int>((triangle.maxZ - minZ) / step) + 1, 0, depth - 1);
+        for (int z = top; z <= bottom; ++z) for (int x = left; x <= right; ++x) {
+            const float px = minX + x * step, pz = minZ + z * step;
+            const float u = ((b.z - c.z) * (px - c.x) + (c.x - b.x) * (pz - c.z)) / denominator;
+            const float v = ((c.z - a.z) * (px - c.x) + (a.x - c.x) * (pz - c.z)) / denominator;
+            if (u < -.001f || v < -.001f || u + v > 1.001f) continue;
+            const FVector point(px, u * a.y + v * b.y + (1 - u - v) * c.y + 6.f, pz);
+            auto& cell = cells[z * width + x];
+            if (cell.size() >= 12 || std::any_of(cell.begin(), cell.end(), [&](int n) {
+                return std::abs(nav.nodes[n].pos.y - point.y) < 4.f;
+            }) || !BattleCanDrive(point, point)) continue;
+            cell.push_back(static_cast<int>(nav.nodes.size()));
+            nav.nodes.push_back({point, {}});
+        }
+    }
+    constexpr int offsets[4][2] = {{1, 0}, {0, 1}, {1, 1}, {-1, 1}};
+    for (int z = 0; z < depth; ++z) for (int x = 0; x < width; ++x) {
+        for (const auto& offset : offsets) {
+            const int nx = x + offset[0], nz = z + offset[1];
+            if (nx < 0 || nx >= width || nz >= depth) continue;
+            for (int from : cells[z * width + x]) for (int to : cells[nz * width + nx]) {
+                const auto& a = nav.nodes[from].pos;
+                const auto& b = nav.nodes[to].pos;
+                const float dx = a.x - b.x, dz = a.z - b.z;
+                const float allowedRise = vertical ? std::sqrt(dx * dx + dz * dz) * 1.45f + 3.f : step * .8f;
+                if (std::abs(a.y - b.y) > allowedRise || !BattleCanDrive(a, b)) continue;
+                nav.nodes[from].neighbours.push_back(to);
+                nav.nodes[to].neighbours.push_back(from);
+            }
+        }
+    }
+    SPDLOG_INFO("Battle AI: built {} navigation nodes from arena collision surfaces; vertical routing={}", nav.nodes.size(), vertical);
+    if (vertical) {
+        size_t links = 0, rampLinks = 0, isolated = 0;
+        for (const auto& node : nav.nodes) {
+            if (node.neighbours.empty()) ++isolated;
+            for (int neighbour : node.neighbours) {
+                ++links;
+                if (std::abs(node.pos.y - nav.nodes[neighbour].pos.y) > 3.f) ++rampLinks;
+            }
+        }
+        SPDLOG_INFO("Vertical battle graph: links={} ramp links={} isolated nodes={}", links / 2, rampLinks / 2, isolated);
+    }
+}
+
+int BattleNearestNode(const FVector& position, bool reachableOnly = false) {
+    const auto& nodes = battleNavigation.nodes;
+    float best = 140.f;
+    int nearest = -1;
+    for (int i = 0; i < static_cast<int>(nodes.size()); ++i) {
+        if (VerticalBattleAI() && nodes[i].neighbours.empty()) continue;
+        if (reachableOnly && !std::isfinite(battleNavigation.distance[i])) continue;
+        const float distance = BattleDistance(nodes[i].pos, position);
+        if (distance < best && std::abs(nodes[i].pos.y - position.y) < 40.f &&
+            BattleCanDrive(position, nodes[i].pos)) { best = distance; nearest = i; }
+    }
+    return nearest;
+}
+
+bool BattleRivalAlive(int id, int other) {
+    const auto& rival = gPlayers[other];
+    return other != id && (rival.type & PLAYER_EXISTS) && gPlayerBalloonCount[other] >= 0 &&
+           !(rival.type & (PLAYER_INVISIBLE_OR_BOMB | PLAYER_CINEMATIC_MODE));
+}
+
+void PlanBattleRoute(int id) {
+    auto& state = afkPlayers[id];
+    auto& nav = battleNavigation;
+    const auto position = BattlePosition(gPlayers[id]);
+    const bool vertical = VerticalBattleAI();
+    const bool flat = FlatBattleAI();
+    // Finish a checked two-leg connection before selecting a new one. Repeated
+    // replanning halfway around a corner otherwise alternates escape headings.
+    if (vertical && state.battleReconnecting && state.botSeconds < state.battleReconnectUntil &&
+        BattleDistance(position, state.battleReconnectGoal) > 12.f &&
+        BattleCanDrive(position, state.battleReconnectGoal)) return;
+    state.battleReconnecting = false;
+    state.battleRouteBlockedSeconds = 0;
+    // A failed plan must not leave an obsolete route active. Local recovery
+    // below can reconnect without continuing to steer into the old obstacle.
+    state.battleRoute.clear();
+    state.battleWaypoint = 0;
+    state.battleGoal = position;
+    nav.distance.assign(nav.nodes.size(), std::numeric_limits<float>::infinity());
+    nav.parent.assign(nav.nodes.size(), -1);
+    using Entry = std::pair<float, int>;
+    std::priority_queue<Entry, std::vector<Entry>, std::greater<Entry>> pending;
+    int start = -1;
+    if (vertical) {
+        // Join every nearby, directly reachable part of the graph, rather
+        // than letting one nearest node choose a disconnected ramp fragment.
+        std::vector<Entry> candidates;
+        for (int node = 0; node < static_cast<int>(nav.nodes.size()); ++node) {
+            const float distance = BattleDistance(position, nav.nodes[node].pos);
+            if (distance < 140.f && std::abs(nav.nodes[node].pos.y - position.y) < 40.f &&
+                !nav.nodes[node].neighbours.empty()) candidates.emplace_back(distance, node);
+        }
+        std::sort(candidates.begin(), candidates.end());
+        int seeds = 0;
+        for (const auto& [distance, node] : candidates) {
+            if (!BattleCanDrive(position, nav.nodes[node].pos)) continue;
+            if (start < 0) start = node;
+            nav.distance[node] = distance;
+            pending.emplace(distance, node);
+            if (++seeds >= 12) break;
+        }
+        if (start < 0) {
+            // The coarse graph need not contain a node on the kart's side of
+            // a corner. Find a supported intermediate step, then connect that
+            // step to the graph. Both legs use the same wall/deck checks.
+            float bestConnection = std::numeric_limits<float>::infinity();
+            FVector connection{};
+            for (float reach : {24.f, 48.f}) for (int heading = 0; heading < 16; ++heading) {
+                const float radians = heading * (3.14159265359f / 8.f);
+                auto step = position + FVector(-std::sin(radians), 0, std::cos(radians)) * reach;
+                float floor;
+                if (!BattleDeckFloor(step.x, step.z, position.y - 6.f, floor)) continue;
+                step.y = floor + 6.f;
+                if (!BattleCanDrive(position, step)) continue;
+                const int node = BattleNearestNode(step);
+                if (node < 0) continue;
+                const float cost = BattleDistance(position, step) + BattleDistance(step, nav.nodes[node].pos);
+                if (cost < bestConnection) { bestConnection = cost; start = node; connection = step; }
+            }
+            if (start >= 0) {
+                nav.distance[start] = bestConnection;
+                pending.emplace(bestConnection, start);
+                state.battleReconnecting = true;
+                state.battleReconnectGoal = connection;
+                state.battleReconnectUntil = state.botSeconds + 2.5;
+            }
+        }
+    } else {
+        start = BattleNearestNode(position);
+        if (start >= 0) {
+            nav.distance[start] = 0;
+            pending.emplace(0.f, start);
+        }
+    }
+    if (start < 0) {
+        if (vertical) {
+            state.battleItem = state.battleTarget = -1;
+            state.battleMotionAt = 0;
+            state.battlePivoting = false;
+        }
+        if (state.botSeconds >= state.battleDebugAt) {
+            SPDLOG_INFO("Battle AI route unavailable: slot {} has no reachable start node at ({}, {}, {}), graph={}",
+                        id + 1, position.x, position.y, position.z, nav.nodes.size());
+            state.battleDebugAt = state.botSeconds + 5;
+        }
+        return;
+    }
+    while (!pending.empty()) {
+        const auto [cost, node] = pending.top(); pending.pop();
+        if (cost > nav.distance[node]) continue;
+        for (int next : nav.nodes[node].neighbours) {
+            const float climbing = VerticalBattleAI() ? std::abs(nav.nodes[node].pos.y - nav.nodes[next].pos.y) * 1.5f : 0.f;
+            const float nextCost = cost + BattleDistance(nav.nodes[node].pos, nav.nodes[next].pos) + climbing;
+            if (nextCost >= nav.distance[next]) continue;
+            nav.distance[next] = nextCost;
+            nav.parent[next] = node;
+            pending.emplace(nextCost, next);
+        }
+    }
+    int goal = -1, target = -1, itemTarget = -1;
+    float best = std::numeric_limits<float>::infinity();
+    const int heldItem = gPlayers[id].currentItemCopy;
+    const bool offensiveItem = heldItem == ITEM_GREEN_SHELL || heldItem == ITEM_TRIPLE_GREEN_SHELL ||
+                               heldItem == ITEM_RED_SHELL || heldItem == ITEM_TRIPLE_RED_SHELL || heldItem == ITEM_BLUE_SPINY_SHELL;
+    const bool armed = vertical ? state.battleBomb || offensiveItem || (gPlayers[id].effects & STAR_EFFECT) :
+                                 state.battleBomb || heldItem != ITEM_NONE || (gPlayers[id].triggers & DRAG_ITEM_EFFECT);
+    const bool needsItem = vertical ? !armed && heldItem == ITEM_NONE : !armed;
+    // Unarmed bots seek real, currently collectible boxes. Fake boxes are hazards.
+    if (needsItem) for (size_t itemIndex = 0; itemIndex < GetWorld()->Actors.size(); ++itemIndex) {
+        const auto& actor = GetWorld()->Actors[itemIndex];
+        if (!actor || actor->bPendingDestroy || actor->Type != ACTOR_ITEM_BOX || actor->State != 2) continue;
+        if ((vertical || flat) && static_cast<int>(itemIndex) == state.battleBlockedItem &&
+            state.botSeconds < state.battleBlockedItemUntil) continue;
+        // Native item boxes store their support-floor height in Unk_08. Route
+        // to that deck, not the floating visual center above the platform.
+        const FVector box(actor->Pos[0], (vertical || flat) ? actor->Unk_08 + 6.f : actor->Pos[1], actor->Pos[2]);
+        const int node = BattleNearestNode(box, vertical);
+        if (node < 0 || !std::isfinite(nav.distance[node]) || !BattleCanDrive(nav.nodes[node].pos, box)) continue;
+        float score = nav.distance[node];
+        // On multi-level arenas retain a reachable box long enough to climb
+        // its ramp rather than switching floors whenever another box is closer.
+        if (VerticalBattleAI() && static_cast<int>(itemIndex) == state.battleItem) score -= 180.f;
+        if (flat && static_cast<int>(itemIndex) == state.battleItem) score -= 100.f;
+        // Prefer boxes with less competition instead of all bots queuing at one.
+        for (int other = 0; other < LocalMP_Count(); ++other)
+            if (BattleRivalAlive(id, other) && BattleDistance(BattlePosition(gPlayers[other]), box) < 100.f) score += 100.f;
+        if (score < best) { best = score; goal = node; state.battleGoal = box; itemTarget = static_cast<int>(itemIndex); }
+    }
+    state.battleItem = itemTarget;
+    // Keep an opponent for aiming even while heading for ammunition.
+    float rivalScore = std::numeric_limits<float>::infinity();
+    FVector rivalGoal = position;
+    int rivalNode = -1;
+    for (int other = 0; other < LocalMP_Count(); ++other) {
+        if (!BattleRivalAlive(id, other)) continue;
+        if ((vertical || flat) && other == state.battleBlockedTarget && state.botSeconds < state.battleBlockedTargetUntil) continue;
+        const auto& rival = gPlayers[other];
+        const auto predicted = BattlePosition(rival) + FVector(rival.velocity[0], 0, rival.velocity[2]) * 8.f;
+        const int node = BattleNearestNode(BattlePosition(rival), vertical);
+        if (node < 0 || !std::isfinite(nav.distance[node])) continue;
+        const float score = nav.distance[node] + (other == state.battleTarget ? -120.f : 0.f) +
+                            gPlayerBalloonCount[other] * 25.f +
+                            ((rival.effects & STAR_EFFECT) ? 500.f : 0.f);
+        if (score < rivalScore) {
+            rivalScore = score; target = other; rivalNode = node;
+            rivalGoal = BattleCanDrive(BattlePosition(rival), predicted) ? predicted : BattlePosition(rival);
+        }
+    }
+    state.battleTarget = target;
+    if (armed || (!vertical && goal < 0)) { goal = rivalNode; state.battleGoal = rivalGoal; }
+    if (vertical && !armed) state.battleTarget = -1;
+    if (goal < 0 && vertical) {
+        // Reachable targets can temporarily disappear (picked-up boxes, rivals
+        // behind walls/on other decks). Explore a connected ramp/landing instead
+        // of parking. Keep the patrol goal for several seconds to make progress.
+        if (state.battlePatrol >= 0 && state.battlePatrol < static_cast<int>(nav.nodes.size()) &&
+            state.botSeconds < state.battlePatrolUntil &&
+            std::isfinite(nav.distance[state.battlePatrol]) && nav.distance[state.battlePatrol] > 30.f) {
+            goal = state.battlePatrol;
+        } else {
+            float patrolScore = std::numeric_limits<float>::infinity();
+            for (int node = 0; node < static_cast<int>(nav.nodes.size()); ++node) {
+                const float distance = nav.distance[node];
+                if (!std::isfinite(distance) || distance < 35.f || nav.nodes[node].neighbours.empty()) continue;
+                if (state.battleBlockedPatrol >= 0 && state.botSeconds < state.battleBlockedPatrolUntil &&
+                    BattleDistance(nav.nodes[node].pos, nav.nodes[state.battleBlockedPatrol].pos) < 120.f) continue;
+                const float height = std::abs(nav.nodes[node].pos.y - position.y);
+                const float score = std::abs(distance - 320.f) - std::min(height, 120.f) * .5f +
+                                    ((node + id * 43) % 23) * 2.f + (node == state.battlePatrol ? 200.f : 0.f);
+                if (score < patrolScore) { patrolScore = score; goal = node; }
+            }
+            state.battlePatrol = goal;
+            state.battlePatrolUntil = state.botSeconds + 6;
+        }
+        if (goal >= 0) state.battleGoal = nav.nodes[goal].pos;
+    }
+    if (goal < 0) {
+        if (state.botSeconds >= state.battleDebugAt) {
+            SPDLOG_INFO("Battle AI route unavailable: slot {} start={} has no reachable box or survivor, bomb={}",
+                        id + 1, start, state.battleBomb);
+            state.battleDebugAt = state.botSeconds + 5;
+        }
+        return;
+    }
+    for (int n = goal; n >= 0; n = nav.parent[n]) state.battleRoute.push_back(n);
+    std::reverse(state.battleRoute.begin(), state.battleRoute.end());
+    state.battleWaypoint = !vertical && !flat && state.battleRoute.size() > 1 ? 1 : 0;
+    if (vertical || flat) {
+        const int intent = state.battleItem >= 0 ? 10000 + state.battleItem :
+                           state.battleTarget >= 0 ? 20000 + state.battleTarget : 30000 + state.battlePatrol;
+        const float remaining = nav.distance[goal] + (flat ? BattleDistance(position, nav.nodes[start].pos) : 0.f);
+        if (intent != state.battleProgressIntent || remaining < state.battleBestRemaining - 20.f) {
+            state.battleProgressIntent = intent;
+            state.battleBestRemaining = remaining;
+            state.battleGoalProgressAt = state.botSeconds;
+            state.battleTravelSinceProgress = 0;
+        }
+    }
+}
+
+FVector SelectVerticalBattleMotion(int id, FVector goal) {
+    auto& state = afkPlayers[id];
+    const auto& player = gPlayers[id];
+    const auto position = BattlePosition(player);
+    if (state.botSeconds < state.battleMotionAt && BattleDistance(position, state.battleMotionGoal) > 14.f)
+        return state.battleMotionGoal;
+    state.battleMotionAt = state.botSeconds + .12;
+    state.battleMotionSafe = false;
+    if (state.battleRoute.empty()) {
+        // Reconnect to the nearby navigation network instead of braking on a
+        // failed start-node query. Motion still requires a safe floor corridor.
+        float nearest = 200.f;
+        for (const auto& node : battleNavigation.nodes) {
+            const float distance = BattleDistance(position, node.pos);
+            if (node.neighbours.size() >= 2 && std::abs(node.pos.y - position.y) < 20.f && distance < nearest) {
+                nearest = distance; goal = node.pos;
+            }
+        }
+    }
+    Vec3f destination = {goal.x, goal.y, goal.z};
+    const float goalDistance = BattleDistance(position, goal);
+    const s16 desiredYaw = goalDistance > 5.f ? -get_angle_between_two_vectors(gPlayers[id].pos, destination) : player.rotation[1];
+    const float reach = goalDistance > 5.f ? std::min(std::clamp(32.f + player.speed * 10.f, 32.f, 65.f), goalDistance) : 40.f;
+    float best = std::numeric_limits<float>::infinity();
+    const auto tryHeading = [&](s16 yaw, float probeLength) {
+        const float radians = yaw * (3.14159265359f / 32768.f);
+        FVector point = position + FVector(-std::sin(radians), 0, std::cos(radians)) * probeLength;
+        const auto toGoal = goal - position;
+        const float horizontalSquared = toGoal.x * toGoal.x + toGoal.z * toGoal.z;
+        const float projected = horizontalSquared > 1.f ?
+            ((point.x - position.x) * toGoal.x + (point.z - position.z) * toGoal.z) / horizontalSquared : 0.f;
+        float floor;
+        const float reference = position.y - 6.f + std::clamp(projected, -1.f, 1.f) * (goal.y - position.y);
+        if (!BattleDeckFloor(point.x, point.z, reference, floor) || std::abs(floor + 6.f - position.y) > probeLength * 1.45f + 3.f) return;
+        point.y = floor + 6.f;
+        if (!BattleCanDrive(position, point)) return;
+        const int goalTurn = std::abs(static_cast<int>(static_cast<s16>(yaw - desiredYaw)));
+        const int bodyTurn = std::abs(static_cast<int>(static_cast<s16>(yaw - player.rotation[1])));
+        const float score = BattleDistance(point, goal) - goalDistance + goalTurn * .0012f + bodyTurn * .0007f;
+        if (score < best) { best = score; state.battleMotionGoal = point; state.battleMotionSafe = true; }
+    };
+    tryHeading(desiredYaw, reach);
+    // Score real steering alternatives around the kart. This makes a blocked
+    // approach turn along an open corridor rather than keep accelerating at it.
+    for (int direction = -8; direction < 8; ++direction)
+        tryHeading(static_cast<s16>(player.rotation[1] + direction * 0x1000), reach);
+    // At the foot/crest of a ramp a long straight probe can fail even though
+    // the first part is drivable. Take a short supported step, then re-evaluate
+    // from its new floor instead of alternating reverse and wall-facing turns.
+    if (!state.battleMotionSafe) for (float shortReach : {24.f, 12.f}) {
+        tryHeading(desiredYaw, shortReach);
+        for (int direction = -8; direction < 8; ++direction)
+            tryHeading(static_cast<s16>(player.rotation[1] + direction * 0x1000), shortReach);
+        if (state.battleMotionSafe) break;
+    }
+    if (!state.battleMotionSafe) state.battleMotionGoal = position;
+    return state.battleMotionGoal;
+}
+
+void DriveAfkBattlePlayer(int id) {
+    auto& state = afkPlayers[id];
+    auto& player = gPlayers[id];
+    auto& controller = gControllers[id];
+    state.input = controller;
+    state.inputReplaced = true;
+    state.botSeconds += TRACK_TIMER_ITER;
+    const auto position = BattlePosition(player);
+    const bool vertical = VerticalBattleAI();
+    const bool flat = FlatBattleAI();
+    if (vertical || flat) {
+        state.battleTravelSinceProgress += BattleDistance(position, state.battleLastPosition);
+        state.battleLastPosition = position;
+        const int item = player.currentItemCopy;
+        const bool defensive = item == ITEM_BANANA || item == ITEM_BANANA_BUNCH || item == ITEM_FAKE_ITEM_BOX ||
+                               (player.triggers & DRAG_ITEM_EFFECT);
+        state.battleDefensiveSeconds = defensive ? state.battleDefensiveSeconds + TRACK_TIMER_ITER : 0;
+    }
+    const bool bomb = gPlayerBalloonCount[id] < 0;
+    if (state.battleBomb != bomb) {
+        state.battleBomb = bomb;
+        state.battlePlanAt = 0;
+        state.battleRoute.clear();
+        state.battleWaypoint = 0;
+        state.battleTarget = -1;
+        state.stuckSeconds = 0;
+        state.battleRecoverUntil = 0;
+        state.battleMotionAt = 0;
+        SPDLOG_INFO("Battle AI: slot {} switched to {} strategy", id + 1, bomb ? "bomb pursuit" : "balloon combat");
+    }
+    BuildBattleNavigation();
+    if (state.botSeconds >= state.battlePlanAt) {
+        PlanBattleRoute(id);
+        state.battlePlanAt = state.botSeconds + .65 + (id % 4) * .07;
+    }
+    if ((vertical || flat) && !state.battleRoute.empty()) {
+        // Track the route actually being followed even between successful
+        // replans. A moving target or a failed start query cannot hide a loop.
+        float remaining = BattleDistance(battleNavigation.nodes[state.battleRoute.back()].pos, state.battleGoal);
+        FVector previous = position;
+        if (state.battleReconnecting) {
+            remaining += BattleDistance(previous, state.battleReconnectGoal);
+            previous = state.battleReconnectGoal;
+        }
+        for (size_t waypoint = state.battleWaypoint; waypoint < state.battleRoute.size(); ++waypoint) {
+            const auto& point = battleNavigation.nodes[state.battleRoute[waypoint]].pos;
+            remaining += BattleDistance(previous, point);
+            previous = point;
+        }
+        if (remaining < state.battleBestRemaining - 20.f) {
+            state.battleBestRemaining = remaining;
+            state.battleGoalProgressAt = state.botSeconds;
+            state.battleTravelSinceProgress = 0;
+        }
+    }
+    if ((vertical || flat) && state.battleProgressIntent != -1000 &&
+        state.botSeconds - state.battleGoalProgressAt > 5 && state.battleTravelSinceProgress > 180.f) {
+        SPDLOG_INFO("{} battle AI circling: slot={} travel={:.1f} remaining={:.1f} box={} target={}; changing goal",
+                    vertical ? "Vertical" : "Flat", id + 1, state.battleTravelSinceProgress,
+                    state.battleBestRemaining, state.battleItem, state.battleTarget + 1);
+        if (state.battleItem >= 0) {
+            state.battleBlockedItem = state.battleItem;
+            state.battleBlockedItemUntil = state.botSeconds + 8;
+        }
+        if (state.battleTarget >= 0) {
+            state.battleBlockedTarget = state.battleTarget;
+            state.battleBlockedTargetUntil = state.botSeconds + 8;
+        }
+        if (state.battlePatrol >= 0) {
+            state.battleBlockedPatrol = state.battlePatrol;
+            state.battleBlockedPatrolUntil = state.botSeconds + 8;
+        }
+        state.battlePatrolUntil = 0;
+        state.battleProgressIntent = -1000;
+        state.battleMotionAt = 0;
+        state.battlePivoting = false;
+        state.battleReconnecting = false;
+        PlanBattleRoute(id);
+    }
+    FVector goal = state.battleGoal;
+    if (vertical && state.battleReconnecting && BattleDistance(position, state.battleReconnectGoal) < 12.f)
+        state.battleReconnecting = false;
+    if (vertical || flat) {
+        while (!state.battleReconnecting && state.battleWaypoint < state.battleRoute.size() &&
+               BattleDistance(position, battleNavigation.nodes[state.battleRoute[state.battleWaypoint]].pos) < (flat ? 26.f : 12.f))
+            ++state.battleWaypoint;
+    }
+    if (!state.battleReconnecting && state.battleWaypoint < state.battleRoute.size()) {
+        // Skip intermediate points only when the entire corridor is walkable.
+        const size_t lookaheadEnd = state.battleWaypoint + (vertical ? 3 : 5);
+        for (size_t next = state.battleWaypoint + 1; next < state.battleRoute.size() &&
+             next < (vertical ? lookaheadEnd : state.battleWaypoint + 5); ++next) {
+            const auto& point = battleNavigation.nodes[state.battleRoute[next]].pos;
+            if (!BattleCanDrive(position, point)) break;
+            state.battleWaypoint = next;
+        }
+        goal = battleNavigation.nodes[state.battleRoute[state.battleWaypoint]].pos;
+        if (BattleDistance(position, goal) < (vertical ? 12.f : 26.f)) ++state.battleWaypoint;
+        if (state.battleWaypoint >= state.battleRoute.size() && BattleCanDrive(position, state.battleGoal)) goal = state.battleGoal;
+    }
+    // A target may move against a wall after the route was planned. Keep the
+    // final safe waypoint instead of repeatedly braking toward an invalid goal.
+    if (!state.battleRoute.empty() && state.battleWaypoint >= state.battleRoute.size() &&
+        !BattleCanDrive(position, state.battleGoal)) {
+        goal = battleNavigation.nodes[state.battleRoute.back()].pos;
+        state.battlePlanAt = 0;
+    }
+    if (vertical && state.battleReconnecting) goal = state.battleReconnectGoal;
+    if (vertical) {
+        // Do not keep a valid-looking but now unreachable waypoint after a
+        // collision pushes the kart around a corner or onto another deck.
+        state.battleRouteBlockedSeconds = !state.battleRoute.empty() && !BattleCanDrive(position, goal) ?
+            state.battleRouteBlockedSeconds + TRACK_TIMER_ITER : 0;
+        if (state.battleRouteBlockedSeconds > .6) {
+            state.battleRoute.clear();
+            state.battleWaypoint = 0;
+            state.battleGoal = goal = position;
+            state.battleMotionAt = state.battlePlanAt = 0;
+            state.battlePivoting = false;
+            state.battleReconnecting = false;
+            state.battleRouteBlockedSeconds = 0;
+        }
+    }
+    // Bombs attack by touching a survivor. At close range leave the coarse
+    // navigation waypoint and steer for a short, collision-checked intercept.
+    if (state.battleBomb && state.battleTarget >= 0 && BattleRivalAlive(id, state.battleTarget)) {
+        const auto& rival = gPlayers[state.battleTarget];
+        const auto target = BattlePosition(rival);
+        const float distance = BattleDistance(position, target);
+        if (distance < 200.f && std::abs(target.y - position.y) < 25.f) {
+            const float lead = distance < 35.f ? 0.f : std::min(18.f, distance / 7.f);
+            const auto intercept = target + FVector(rival.velocity[0], 0, rival.velocity[2]) * lead;
+            if (BattleCanDrive(position, intercept)) goal = intercept;
+            else if (BattleCanDrive(position, target)) goal = target;
+        }
+    }
+    const auto angleTo = [&](const FVector& point) {
+        Vec3f destination = {point.x, point.y, point.z};
+        return static_cast<s16>(-get_angle_between_two_vectors(player.pos, destination) - player.rotation[1]);
+    };
+    const FVector driveGoal = vertical ? SelectVerticalBattleMotion(id, goal) : goal;
+    const s16 driveTurn = (vertical || flat) && state.battlePivoting ? static_cast<s16>(state.battlePivotYaw - player.rotation[1]) : angleTo(driveGoal);
+    const int turnError = std::abs(static_cast<int>(driveTurn));
+    int steering = std::clamp(static_cast<int>(driveTurn) / 80, -80, 80);
+    u16 buttons = state.battleRoute.empty() && !(vertical && state.battleMotionSafe) ? B_BUTTON : A_BUTTON;
+    if (std::abs(steering) > 55 && player.speed > 1.5f) buttons |= B_BUTTON;
+    if (vertical) {
+        const bool ramp = std::abs(goal.y - position.y) > 6.f || player.collision.orientationVector[1] < .96f;
+        const float safeSpeed = ramp ? 2.1f : std::abs(steering) > 35 ? 2.5f : 4.f;
+        if (player.speed > safeSpeed) buttons = B_BUTTON;
+    }
+
+    // Real displacement catches wall pushing even if wheel speed stays high.
+    if (BattleDistance(position, state.battleProgress) > 35.f ||
+        ((vertical || flat) && turnError > 0x1800 && turnError + 64 < state.battleLastTurnError)) {
+        state.battleProgress = position; state.stuckSeconds = 0;
+    } else state.stuckSeconds += TRACK_TIMER_ITER;
+    state.battleLastTurnError = turnError;
+    if (state.stuckSeconds > 1.8 && state.botSeconds >= state.battleRecoverUntil) {
+        ++state.battleRecoveries;
+        state.battleRecoverUntil = state.botSeconds + .85;
+        state.stuckSeconds = 0;
+        state.battlePlanAt = 0;
+        if (vertical || flat) {
+            state.battleMotionAt = 0;
+            state.battlePivoting = false;
+            if (state.battleItem >= 0 && state.battleRecoveries > 1) {
+                state.battleBlockedItem = state.battleItem;
+                state.battleBlockedItemUntil = state.botSeconds + 8;
+            }
+        }
+    }
+    const bool reversing = state.botSeconds < state.battleRecoverUntil;
+    if (reversing) {
+        buttons = B_BUTTON;
+        // Native reverse needs B AND stick Y below -49 after deadzone/clamp.
+        // Strong sideways input reduces Y, so use a modest recovery turn.
+        steering = ((id + state.battleRecoveries) & 1) ? 35 : -35;
+        if (vertical && state.battleMotionSafe) {
+            const s16 reverseTurn = static_cast<s16>(angleTo(driveGoal) + 0x8000);
+            steering = -std::clamp(static_cast<int>(reverseTurn) / 256, -35, 35);
+        }
+    } else {
+        // Short local lookahead handles changed circumstances between plans.
+        const auto delta = driveGoal - position;
+        const float length = std::sqrt(delta.x * delta.x + delta.z * delta.z);
+        if (length > 5.f && !BattleCanDrive(position, position + delta * (std::min(length, 38.f) / length))) {
+            buttons = B_BUTTON;
+            state.battlePlanAt = 0;
+        }
+        if (vertical && state.battleMotionSafe) {
+            // Probe where momentum/body heading will actually carry the kart,
+            // not just the line to its desired waypoint. Brake before a wall,
+            // then use the game's normal A+B pivot to face the open corridor.
+            FVector forward(-std::sin(player.rotation[1] * (3.14159265359f / 32768.f)), 0,
+                             std::cos(player.rotation[1] * (3.14159265359f / 32768.f)));
+            const float travel = std::sqrt(player.velocity[0] * player.velocity[0] + player.velocity[2] * player.velocity[2]);
+            if (travel > .6f && !(player.kartProps & BACK_UP))
+                forward = FVector(player.velocity[0] / travel, 0, player.velocity[2] / travel);
+            const float lookahead = std::clamp(15.f + player.speed * 8.f, 15.f, 45.f);
+            auto ahead = position + forward * lookahead;
+            const float goalHorizontal = delta.x * delta.x + delta.z * delta.z;
+            const float rampReference = goalHorizontal > 1.f ?
+                std::clamp((forward.x * delta.x + forward.z * delta.z) * lookahead / goalHorizontal, -1.5f, 1.5f) * delta.y : 0.f;
+            float floor;
+            const bool aheadSupported = BattleDeckFloor(ahead.x, ahead.z, position.y - 6.f + rampReference, floor);
+            if (aheadSupported) ahead.y = floor + 6.f;
+            const bool blockedAhead = !aheadSupported || !BattleCanDrive(position, ahead);
+            if (blockedAhead && player.speed > .6f) buttons = B_BUTTON;
+            else if ((turnError > 0x2400 || (blockedAhead && turnError > 0x400)) && player.speed < .7f) buttons = A_BUTTON | B_BUTTON;
+            else if (blockedAhead) buttons = B_BUTTON;
+        }
+        // Dodge nearby ground traps and moving shells when there is safe floor
+        // on the escape side. Do not dodge orbiting/held items as projectiles.
+        if (length > 5.f) for (const auto& actor : GetWorld()->Actors) {
+            if (!actor || actor->bPendingDestroy || actor->Flags == 0) continue;
+            const bool shell = (actor->Type == ACTOR_GREEN_SHELL || actor->Type == ACTOR_RED_SHELL) &&
+                               (actor->State == MOVING_SHELL || actor->State == RED_SHELL_LOCK_ON);
+            const bool trap = (actor->Type == ACTOR_BANANA && actor->State == BANANA_ON_GROUND) ||
+                              (actor->Type == ACTOR_FAKE_ITEM_BOX && actor->State == FAKE_ITEM_BOX_ON_GROUND);
+            if (!shell && !trap) continue;
+            const FVector hazard(actor->Pos[0], actor->Pos[1], actor->Pos[2]);
+            if (std::abs(hazard.y - position.y) > 22.f || BattleDistance(position, hazard) > (shell ? 100.f : 65.f)) continue;
+            if (std::abs(static_cast<int>(angleTo(hazard))) > 0x1800) continue;
+            const int side = angleTo(hazard) >= 0 ? -1 : 1;
+            const auto forward = delta * (1.f / length);
+            // Verify either side geometrically; steering follows the engine's
+            // angle convention rather than assuming world-axis handedness.
+            const FVector lateral(-forward.z * 28.f, 0, forward.x * 28.f);
+            FVector escape = position + forward * 40.f + lateral * static_cast<float>(side);
+            if (!BattleCanDrive(position, escape)) escape = position + forward * 40.f - lateral * static_cast<float>(side);
+            if (BattleCanDrive(position, escape)) steering = std::clamp(static_cast<int>(angleTo(escape)) / 65, -80, 80);
+            else buttons = B_BUTTON;
+            break;
+        }
+    }
+
+    const bool safeApproach = vertical ? state.battleMotionSafe :
+        flat && !state.battleRoute.empty() && BattleDistance(position, driveGoal) > 5.f && BattleCanDrive(position, driveGoal);
+    if ((vertical || flat) && !reversing) {
+        if (!safeApproach) {
+            // A failed motion query has no steering destination. Accelerating
+            // toward the kart's own position previously created aimless loops.
+            buttons = B_BUTTON;
+            state.battlePivoting = false;
+        } else {
+            const bool sharpApproach = turnError > 0x3800 ||
+                (BattleDistance(position, driveGoal) < 90.f && turnError > 0x2000);
+            if (!state.battlePivoting && sharpApproach) {
+                state.battlePivoting = true;
+                state.battlePivotYaw = static_cast<s16>(player.rotation[1] + angleTo(driveGoal));
+            }
+            if (state.battlePivoting) {
+                const s16 error = static_cast<s16>(state.battlePivotYaw - player.rotation[1]);
+                steering = std::clamp(static_cast<int>(error) / 65, -80, 80);
+                if (std::abs(static_cast<int>(error)) < 0x700) {
+                    state.battlePivoting = false;
+                    state.battleMotionAt = 0;
+                    buttons = A_BUTTON;
+                } else {
+                    // Brake first, then turn with normal stationary A+B input.
+                    // Holding a constant turn while accelerating makes an orbit
+                    // whose radius can be larger than the distance to the box.
+                    buttons = player.speed > .35f ? B_BUTTON : A_BUTTON | B_BUTTON;
+                }
+            }
+        }
+    }
+    int stickY = reversing ? -80 : 0;
+    if (state.stuckSeconds > 1.f && state.botSeconds >= state.battleDebugAt) {
+        SPDLOG_INFO("Battle AI stalled: slot {} route={} target={} bomb={} speed={} balloons={} recovering={}",
+                    id + 1, state.battleRoute.size(), state.battleTarget + 1, state.battleBomb,
+                    player.speed, gPlayerBalloonCount[id], reversing);
+        state.battleDebugAt = state.botSeconds + 5;
+    }
+    if (state.botSeconds >= state.battleFireAt && state.botSeconds >= state.battleRecoverUntil) {
+        bool fire = false;
+        const int item = player.currentItemCopy;
+        const bool dragging = (player.triggers & DRAG_ITEM_EFFECT) != 0;
+        if ((vertical || flat) && !state.battleBomb && state.battleDefensiveSeconds > 2.5 &&
+            (item == ITEM_BANANA || item == ITEM_BANANA_BUNCH || item == ITEM_FAKE_ITEM_BOX || dragging) &&
+            safeApproach && !state.battlePivoting) fire = true;
+        if (!state.battleBomb && (item == ITEM_STAR || item == ITEM_BOO || item == ITEM_THUNDERBOLT)) fire = true;
+        if (item >= ITEM_MUSHROOM && item <= ITEM_SUPER_MUSHROOM) {
+            const auto delta = ((vertical || flat) ? state.battleGoal : goal) - position;
+            const float distance = std::sqrt(delta.Dot(delta));
+            const float boostDistance = vertical ? 120.f : 180.f;
+            fire = distance > boostDistance && std::abs(steering) < 20 && !state.battlePivoting &&
+                   BattleCanDrive(position, position + delta * (boostDistance / distance));
+        }
+        if (!state.battleBomb && state.battleTarget >= 0 && BattleRivalAlive(id, state.battleTarget)) {
+            const auto& rival = gPlayers[state.battleTarget];
+            const auto target = BattlePosition(rival);
+            const int turn = std::abs(static_cast<int>(angleTo(target)));
+            const float distance = BattleDistance(position, target);
+            const bool sameLevel = std::abs(target.y - position.y) < 25.f;
+            const bool clear = sameLevel && distance < 800.f && BattleCanDrive(position, target);
+            if (item == ITEM_GREEN_SHELL || item == ITEM_TRIPLE_GREEN_SHELL) {
+                fire = clear && distance < 450.f && (turn < 0x900 || turn > 0x7300);
+                if (turn > 0x7300) stickY = -80;
+            } else if (item == ITEM_RED_SHELL || item == ITEM_TRIPLE_RED_SHELL || item == ITEM_BLUE_SPINY_SHELL) {
+                fire = clear && turn < 0x1800;
+            } else if (item == ITEM_BANANA || item == ITEM_BANANA_BUNCH || item == ITEM_FAKE_ITEM_BOX || dragging) {
+                fire = ((vertical || flat) && fire) || (clear && distance < 180.f && turn > 0x5800);
+                // Prefer a nearby pursuer; also deploy traps after holding
+                // them for a while instead of circling with them indefinitely.
+            }
+        }
+        if (fire) {
+            buttons |= Z_TRIG;
+            state.battleFireAt = state.botSeconds + .8 + (id % 3) * .12;
+        }
+    }
+    if ((vertical || flat) && CVarGetInteger("gDiagnostics.DetailedCrashLogging", 0) && state.botSeconds >= state.battleTraceAt) {
+        SPDLOG_INFO("{} battle AI: slot={} task={} held={} target={} box={} route={}/{} pos=({:.1f},{:.1f},{:.1f}) goal=({:.1f},{:.1f},{:.1f}) drive=({:.1f},{:.1f},{:.1f}) yaw={} turn={} steer={} stickY={} buttons={:04x} safe={} reverse={} pivot={} reconnect={} goalAge={:.1f} remaining={:.1f} travelled={:.1f} drag={}",
+                    vertical ? "Vertical" : "Flat", id + 1, state.battleBomb ? "bomb" : state.battleItem >= 0 ? "collect" : state.battleTarget >= 0 ? "attack" : "explore",
+                    player.currentItemCopy, state.battleTarget + 1, state.battleItem, state.battleWaypoint, state.battleRoute.size(),
+                    position.x, position.y, position.z, goal.x, goal.y, goal.z, driveGoal.x, driveGoal.y, driveGoal.z,
+                    player.rotation[1], turnError, steering, stickY, buttons, safeApproach, reversing,
+                    state.battlePivoting, state.battleReconnecting, state.botSeconds - state.battleGoalProgressAt, state.battleBestRemaining,
+                    state.battleTravelSinceProgress, (player.triggers & DRAG_ITEM_EFFECT) != 0);
+        state.battleTraceAt = state.botSeconds + 2;
+    }
+    controller = {};
+    controller.rawStickX = static_cast<s16>(steering);
+    controller.rawStickY = static_cast<s16>(stickY);
+    controller.button = buttons;
+    controller.buttonPressed = buttons & ~state.previousButtons;
+    controller.buttonDepressed = state.previousButtons & ~buttons;
+    state.previousButtons = buttons;
+}
+
+void UseAfkRaceItems(int id) {
+    auto& state = afkPlayers[id];
+    auto& controller = gControllers[id];
+    state.input = controller;
+    state.inputReplaced = true;
+    state.botSeconds += TRACK_TIMER_ITER;
+    // Keep native CPU steering, but supply normal item-button edges for the
+    // human inventory, including follow-up throws and multi-use mushrooms.
+    const u16 buttons = std::fmod(state.botSeconds + id * .13, 1.5) < TRACK_TIMER_ITER * 1.1 ? Z_TRIG : 0;
+    controller = {};
+    controller.button = buttons;
+    controller.buttonPressed = buttons & ~state.previousButtons;
+    controller.buttonDepressed = state.previousButtons & ~buttons;
+    state.previousButtons = buttons;
+}
 const char* characterNames[] = {"Mario", "Luigi", "Yoshi", "Toad", "Donkey Kong", "Wario", "Peach", "Bowser"};
 const int rewards[] = {9, 6, 3, 1};
 
@@ -291,6 +1236,7 @@ float ItemWindowScale() {
     // Halve the previous 5P size, then subtract ten percentage points from
     // that new baseline per additional human (100/90/80/70%).
     constexpr float fourPlayerItemScale = 1.5f;
+    if (participants == 3 || participants == 4) return fourPlayerItemScale * .7f;
     if (participants <= 4) return fourPlayerItemScale;
     constexpr float fivePlayerItemScale = fourPlayerItemScale * .9f * .5f;
     return fivePlayerItemScale * (1.f - .1f * (std::min(participants, 8) - 5));
@@ -299,7 +1245,7 @@ float ItemWindowScale() {
 }
 
 extern "C" int MultiplayerOptions_SixteenEnabled(void) {
-    return CVarGetInteger(CVAR_MULTIPLAYER_SIXTEEN, 0) != 0;
+    return CVarGetInteger(CVAR_MULTIPLAYER_SIXTEEN, 1) != 0;
 }
 extern "C" int MultiplayerOptions_DisplayCount(void) {
     return std::clamp(CVarGetInteger(CVAR_MULTIPLAYER_SCREENS, 1), 1, 3);
@@ -339,6 +1285,72 @@ extern "C" void MultiplayerOptions_OnBotsChanged(void) {
 }
 
 extern "C" int LocalMP_IsActive(void) { return active && gGamestate == RACING; }
+extern "C" int LocalMP_IsAfkBot(int player) {
+    return player >= 0 && player < MAX_HUMAN_PLAYERS && afkPlayers[player].driving;
+}
+
+extern "C" void LocalMP_RestoreAfkInput(void) {
+    // Bot inputs must never look like real activity on the next logic tick.
+    for (int id = 0; id < MAX_HUMAN_PLAYERS; ++id) {
+        auto& state = afkPlayers[id];
+        if (state.inputReplaced) {
+            gControllers[id] = state.input;
+            state.inputReplaced = false;
+        }
+    }
+}
+
+extern "C" void LocalMP_ResetAfk(void) {
+    LocalMP_RestoreAfkInput();
+    for (int id = 0; id < MAX_HUMAN_PLAYERS; ++id) ReleaseAfkPlayer(id);
+    battleNavigation = {};
+}
+
+extern "C" void LocalMP_UpdateAfk(void) {
+    LocalMP_RestoreAfkInput();
+    if (!CVarGetInteger(CVAR_AFK_BOTS, 1) || gGamestate != RACING || gDemoMode ||
+        gRaceState < RACE_IN_PROGRESS || gRaceState >= RACE_FINISHED) {
+        LocalMP_ResetAfk();
+        return;
+    }
+    if (gIsGamePaused) return;
+    const int timeout = std::clamp(CVarGetInteger(CVAR_AFK_SECONDS, 5), 1, 86400);
+    const int count = std::clamp(LocalMP_Count(), 1, MAX_HUMAN_PLAYERS);
+    for (int id = 0; id < MAX_HUMAN_PLAYERS; ++id) {
+        auto& state = afkPlayers[id];
+        auto& player = gPlayers[id];
+        const bool eliminatedBattlePlayer = gModeSelection == BATTLE && gPlayerBalloonCount[id] < 0;
+        // Battle elimination fixes ranking, but does not end control of a bomb.
+        // The native explosion clears PLAYER_EXISTS; results stop all takeover.
+        if (id >= count || !(player.type & PLAYER_EXISTS) || !(player.type & PLAYER_HUMAN) ||
+            (player.type & PLAYER_START_SEQUENCE) ||
+            (!eliminatedBattlePlayer && (player.type & (PLAYER_CINEMATIC_MODE | PLAYER_INVISIBLE_OR_BOMB))) ||
+            (gModeSelection != BATTLE && LocalMP_IsActive() && finished[id])) {
+            ReleaseAfkPlayer(id);
+            continue;
+        }
+        const auto& input = gControllers[id];
+        const bool activity = input.button || input.buttonPressed || input.buttonDepressed ||
+            std::abs(input.rawStickX) > 12 || std::abs(input.rawStickY) > 12 ||
+            std::abs(input.rightRawStickX) > 12 || std::abs(input.rightRawStickY) > 12;
+        if (activity) {
+            ReleaseAfkPlayer(id);
+            continue;
+        }
+        state.idleSeconds += TRACK_TIMER_ITER;
+        if (!state.driving && state.idleSeconds >= timeout) {
+            state.driving = true;
+            if (gModeSelection != BATTLE) {
+                reset_cpu_behaviour(id);
+                player.type |= PLAYER_CPU;
+            }
+        }
+        if (state.driving) {
+            if (gModeSelection == BATTLE) DriveAfkBattlePlayer(id);
+            else UseAfkRaceItems(id);
+        }
+    }
+}
 extern "C" int LocalMP_IsLobbyOpen(void) {
     return MultiplayerOptions_EightEnabled() && MultiplayerOptions_CanChange() && lobby && !active;
 }
@@ -641,7 +1653,7 @@ extern "C" int LocalMP_RaceResultsOpen(void) {
     return LocalMP_IsActive() && results && mode != 2;
 }
 extern "C" int LocalMP_BattleResultsOpen(void) {
-    return LocalMP_IsActive() && results && mode == 2 && participants > 4;
+    return LocalMP_IsActive() && results && mode == 2 && (participants == 3 || participants > 4);
 }
 extern "C" int LocalMP_RacerCount(void) {
     if (LocalMP_IsActive()) return racers;
@@ -651,6 +1663,11 @@ extern "C" int LocalMP_RacerCount(void) {
 extern "C" int LocalMP_IsFinished(int player) {
     // Battle players keep their native eliminated-player bomb physics and camera.
     return player < 0 || player >= racers || results || (mode != 2 && finished[player]);
+}
+extern "C" int LocalMP_CanCoastAfterFinish(int player) {
+    // Results lock scoring and player input, but native cinematic CPU driving
+    // and camera updates continue behind the ranking screen.
+    return LocalMP_IsActive() && mode != 2 && player >= 0 && player < racers && finished[player];
 }
 extern "C" int LocalMP_CeremonyResult(int* character, int* rank) {
     // Reset for native ceremonies too, so a previous expanded cup cannot
@@ -757,21 +1774,26 @@ extern "C" void LocalMP_ProcessRequest(void) {
 }
 
 extern "C" void LocalMP_ResetRace(void) {
+    LocalMP_ResetAfk();
     const bool sixteenRace = gModeSelection != BATTLE && MultiplayerOptions_SixteenEnabled();
-    if (!active && gGamestate == RACING && !gDemoMode && (sixteenRace ||
+    const bool sharedSmallLayout = MultiplayerOptions_EightEnabled() && gPlayerCount >= 2 && gPlayerCount <= 4;
+    if (!active && gGamestate == RACING && !gDemoMode && (sixteenRace || sharedSmallLayout || gPlayerCount == 3 ||
         (gModeSelection == GRAND_PRIX && (gPlayerCount == 3 || gPlayerCount == 4) &&
          MultiplayerOptions_EightEnabled() && !MultiplayerOptions_BotsEnabled()))) {
-        // Adopt the native menu's human roster before spawning the larger grid.
+        // Use the same viewport/HUD path for native-menu 2-4P with either
+        // expanded mode enabled. Racer count still follows the chosen options.
         participants = gPlayerCount;
-        racers = sixteenRace ? NUM_RACERS : participants;
+        racers = sixteenRace ? NUM_RACERS :
+            gModeSelection == GRAND_PRIX && (participants == 2 || MultiplayerOptions_BotsEnabled()) ? NUM_PLAYERS : participants;
         for (int player = 0; player < racers; ++player) {
             characters[player] = player < participants ? gCharacterSelections[player] : player % NUM_PLAYERS;
             gCharacterSelections[player] = characters[player];
         }
-        mode = gModeSelection == GRAND_PRIX ? 0 : gModeSelection == VERSUS ? 1 : 3;
+        mode = gModeSelection == GRAND_PRIX ? 0 : gModeSelection == VERSUS ? 1 : gModeSelection == BATTLE ? 2 : 3;
         engineClass = gCCSelection;
         selectedCup = static_cast<int>(GetWorld()->GetCupIndex());
         selectedTrack = raceInCup = static_cast<int>(GetWorld()->GetCurrentCup()->CursorPosition);
+        if (mode == 2) selectedArena = static_cast<int>(static_cast<Cup*>(GetBattleCup())->CursorPosition);
         points.fill(0);
         ready.fill(true);
         for (int player = 0; player < racers; ++player) gGPCurrentRaceRankByPlayerId[player] = racers - player - 1;
@@ -783,6 +1805,9 @@ extern "C" void LocalMP_ResetRace(void) {
         request = 0;
     }
     if (!LocalMP_IsActive()) return;
+    // Initialize the visibility fallback once per race. Layout runs every
+    // frame; resetting it there makes off-floor cameras draw section 1.
+    for (int view = 0; view < MAX_HUMAN_PLAYERS; ++view) gScreenContexts[view].pathCounter = 1;
     std::fill_n(D_8018E838, MAX_HUMAN_PLAYERS, 0);
     std::fill_n(D_8018E840, MAX_HUMAN_PLAYERS, 0);
     finished.fill(false);
@@ -826,22 +1851,33 @@ extern "C" void LocalMP_Layout(void) {
         } else if (displays > 1) columns = (count + 1) / 2;
         else columns = static_cast<int>(std::ceil(std::sqrt(static_cast<float>(count))));
         const int rows = (count + columns - 1) / columns;
-        const bool hasWideSlot = displays == 1 && (participants == 5 || participants == 7);
-        const int preferredPlayer = CVarGetInteger("gMultiplayer.WidePlayer", 0) - 1;
-        const int widePlayer = preferredPlayer >= 0 && preferredPlayer < participants ? preferredPlayer : participants - 1;
         for (int cell = 0; cell < count; ++cell) {
             const int player = firstPlayer + cell;
             auto& screen = gScreenContexts[player];
             int slot = cell;
-            if (hasWideSlot) {
-                if (player == widePlayer) slot = participants - 1;
-                else if (player == participants - 1) slot = widePlayer;
+            // Spread incomplete bottom rows across the full panel.
+            const bool equalBottomRow = displays == 1 &&
+                (participants == 3 || participants == 5 || participants == 7 || participants == 11 || participants == 15) &&
+                slot / columns == rows - 1;
+            int row = slot / columns;
+            int column = slot % columns;
+            int rowColumns = equalBottomRow ? count - columns * (rows - 1) : columns;
+            // Ten/thirteen players use 4 / 3 / 3 and 4 / 3 / 3 / 3.
+            if (displays == 1 && (participants == 10 || participants == 13) && slot >= 4) {
+                row = 1 + (slot - 4) / 3;
+                column = (slot - 4) % 3;
+                rowColumns = 3;
             }
-            const int left = panelLeft + edge(slot % columns, width, columns);
-            const int right = hasWideSlot && slot == count - 1 ? panelRight :
-                panelLeft + edge(slot % columns + 1, width, columns);
-            const int top = panelTop + edge(slot / columns, height, rows);
-            const int bottom = panelTop + edge(slot / columns + 1, height, rows);
+            // Fourteen players use 4 / 4 / 3 / 3.
+            if (displays == 1 && participants == 14 && slot >= 8) {
+                row = 2 + (slot - 8) / 3;
+                column = (slot - 8) % 3;
+                rowColumns = 3;
+            }
+            const int left = panelLeft + edge(column, width, rowColumns);
+            const int right = panelLeft + edge(column + 1, width, rowColumns);
+            const int top = panelTop + edge(row, height, rows);
+            const int bottom = panelTop + edge(row + 1, height, rows);
             screen.screenWidth = right - left;
             screen.screenHeight = bottom - top;
             screen.screenStartX = left + screen.screenWidth / 2;
@@ -849,13 +1885,15 @@ extern "C" void LocalMP_Layout(void) {
             screen.player = &gPlayers[player];
             screen.controllers = &gControllers[player];
             screen.unkC = &D_8015F790[player * 16];
-            screen.pathCounter = 1;
         }
         firstPlayer += count;
     }
     gScreenAspect = static_cast<float>(gScreenContexts[0].screenWidth) / gScreenContexts[0].screenHeight;
     if (LocalMP_BattleResultsOpen() || LocalMP_RaceResultsOpen()) {
-        auto& screen = gScreenContexts[battleWinner >= 0 ? battleWinner : 0];
+        // The render loop selects gPlayerWinningIndex for both race and battle
+        // rankings. Enlarge that same view, including when P2/P3/P4 wins.
+        const int resultViewer = std::clamp(static_cast<int>(gPlayerWinningIndex), 0, participants - 1);
+        auto& screen = gScreenContexts[resultViewer];
         screen.screenWidth = SCREEN_WIDTH;
         screen.screenHeight = SCREEN_HEIGHT;
         screen.screenStartX = SCREEN_WIDTH / 2;
@@ -971,7 +2009,7 @@ extern "C" void LocalMP_OnInput(void) {
         }
     }
     bool changedDisplay = false;
-    if (participants > 1 && (participants > 4 || racers > NUM_PLAYERS)) {
+    if (participants > 1 && (participants == 3 || participants > 4 || racers > NUM_PLAYERS)) {
         for (int player = 0; player < participants; ++player) {
             if (gControllers[player].buttonPressed & R_CBUTTONS) {
                 progressDisplay = !progressDisplay;
@@ -988,7 +2026,7 @@ extern "C" void LocalMP_DrawItemWindows(void) {
     // One human keeps the native corner map and perimeter progress HUD,
     // regardless of how many CPU racers fill the grid.
     if (!LocalMP_IsActive() || participants == 1 ||
-        (participants <= 4 && racers <= NUM_PLAYERS && MultiplayerOptions_DisplayCount() == 1) ||
+        (participants != 3 && participants <= 4 && racers <= NUM_PLAYERS && MultiplayerOptions_DisplayCount() == 1) ||
         paused || results || gHUDDisable) return;
     init_rdp();
     gSPViewport(gDisplayListHead++, VIRTUAL_TO_PHYSICAL(D_802B8880));
@@ -996,7 +2034,7 @@ extern "C" void LocalMP_DrawItemWindows(void) {
     gSPDisplayList(gDisplayListHead++, (Gfx*) D_02007F18);
     const float baseItemScale = ItemWindowScale();
     const auto order = OrderByFinish();
-    for (int player = 0; (participants > 4 || MultiplayerOptions_DisplayCount() > 1) && player < participants; ++player) {
+    for (int player = 0; (participants == 3 || participants > 4 || MultiplayerOptions_DisplayCount() > 1) && player < participants; ++player) {
         const auto& screen = gScreenContexts[player];
         const int left = screen.screenStartX - screen.screenWidth / 2;
         const int top = screen.screenStartY - screen.screenHeight / 2;
@@ -1044,7 +2082,7 @@ extern "C" void LocalMP_DrawItemWindows(void) {
 
 extern "C" void LocalMP_DrawRacePositions(void) {
     if (!LocalMP_IsActive() || mode == 2 || participants == 1 ||
-        (participants < 5 && MultiplayerOptions_DisplayCount() == 1) ||
+        (participants != 3 && participants < 5 && MultiplayerOptions_DisplayCount() == 1) ||
         paused || results || gHUDDisable || gRaceState <= RACE_STAGING) return;
     init_rdp();
     gSPViewport(gDisplayListHead++, VIRTUAL_TO_PHYSICAL(D_802B8880));
@@ -1056,8 +2094,8 @@ extern "C" void LocalMP_DrawRacePositions(void) {
     // Shrink both expanded race indicators another 20%, retaining the
     // existing per-player-count reduction and corner anchors.
     constexpr float expandedIndicatorScale = .8f;
-    const float basePositionScale = expandedIndicatorScale * fourPlayerPositionScale * (1.f - .1f * (std::min(participants, 8) - 4));
-    const float baseLapScale = expandedIndicatorScale * (1.f - .1f * (std::min(participants, 8) - 4));
+    const float basePositionScale = expandedIndicatorScale * fourPlayerPositionScale * (1.f - .1f * (std::clamp(participants, 4, 8) - 4));
+    const float baseLapScale = expandedIndicatorScale * (1.f - .1f * (std::clamp(participants, 4, 8) - 4));
     for (int player = 0; player < participants; ++player) {
         const auto& screen = gScreenContexts[player];
         const int left = screen.screenStartX - screen.screenWidth / 2;
@@ -1197,6 +2235,8 @@ extern "C" void LocalMP_UpdateBattle(void) {
     // replacement. Ranking music uses player 1, so stop both native music
     // players as well as HMAS before queuing the results sequence.
     func_800CA330(0);
+    Audio_StopExpandedRaceSounds();
+    SPDLOG_INFO("Battle results: stopped racing sound loops for {} players", participants);
     HMAS_Stop(HMAS_MUSIC);
     play_sequence2(MUSIC_SEQ_VS_BATTLE_RESULTS);
     gRaceState = RACE_FINISHED;
@@ -1217,8 +2257,11 @@ extern "C" void LocalMP_UpdateLaps(void) {
                 finished[i] = true;
                 finishTimes[i] = func_8028EE8C(i);
                 gTimePlayerLastTouchedFinishLine[i] = finishTimes[i];
-                gPlayers[i].type |= PLAYER_CINEMATIC_MODE;
-                if (i < participants) gPlayers[i].type &= ~PLAYER_CPU;
+                // Lock the result, but keep native CPU driving active so the
+                // finished kart clears the line while other humans finish.
+                gPlayers[i].type |= PLAYER_CINEMATIC_MODE | PLAYER_CPU;
+                gPlayers[i].effects &= ~DRIFTING_EFFECT;
+                reset_cpu_behaviour(i);
                 if (i < participants) func_800CA118(static_cast<u8>(i));
                 gRaceState = RACE_CALCULATE_RANKS;
             }
@@ -1248,16 +2291,26 @@ extern "C" int LocalMP_FinishTick(void) {
     update_race_position_data();
     LocalMP_UpdateLaps();
     const bool everyoneFinished = std::all_of(finished.begin(), finished.begin() + participants, [](bool value) { return value; });
-    if (everyoneFinished) {
-        // Native GP closes the race after all humans finish and estimates any
-        // remaining CPU times from lap/path progress. Preserve that behavior.
-        if (mode != 2 && racers > participants) {
+    const int finishedRacers = static_cast<int>(std::count(finished.begin(), finished.begin() + racers, true));
+    const bool lastRacerRemaining = racers > 1 && finishedRacers == racers - 1;
+    if (everyoneFinished || lastRacerRemaining) {
+        // All human finishers may close a race with CPU rivals still racing.
+        // Also close when just one racer (human or CPU) remains: last place
+        // is already determined, even if that driver is stuck or far behind.
+        if (finishedRacers < racers) {
             func_8028E298();
-            for (int player = participants; player < racers; ++player) {
+            for (int player = 0; player < racers; ++player) {
                 if (finished[player]) continue;
                 finished[player] = estimatedTime[player] = true;
-                finishTimes[player] = gTimePlayerLastTouchedFinishLine[player];
-                gPlayers[player].type |= PLAYER_CINEMATIC_MODE;
+                const float estimate = gTimePlayerLastTouchedFinishLine[player];
+                finishTimes[player] = std::isfinite(estimate) ?
+                    std::max(estimate, gCourseTimer + TRACK_TIMER_ITER_f) : gCourseTimer + TRACK_TIMER_ITER;
+                gTimePlayerLastTouchedFinishLine[player] = finishTimes[player];
+                gPlayers[player].type |= PLAYER_CINEMATIC_MODE | PLAYER_CPU;
+                gPlayers[player].effects &= ~DRIFTING_EFFECT;
+                reset_cpu_behaviour(player);
+                SPDLOG_INFO("Race auto-finish: slot {} assigned remaining place; time {} estimated; last racer={}",
+                            player + 1, finishTimes[player], lastRacerRemaining);
             }
         }
         const auto order = OrderByFinish();
@@ -1274,6 +2327,8 @@ extern "C" int LocalMP_FinishTick(void) {
             // Same trophy persistence as a native cup, without character-ID lookup.
             func_800B536C(BestHumanRank(OrderByPoints()));
         }
+        Audio_StopExpandedRaceSounds();
+        SPDLOG_INFO("Race results: stopped racing sound loops for {} humans / {} racers", participants, racers);
         HMAS_Stop(HMAS_MUSIC);
         if (mode == 0) {
             const int rank = finishingPlace[gPlayerWinningIndex];

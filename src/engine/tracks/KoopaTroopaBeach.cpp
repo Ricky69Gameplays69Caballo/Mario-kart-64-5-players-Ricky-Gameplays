@@ -234,7 +234,7 @@ void KoopaTroopaBeach::Draw(ScreenContext* arg0) {
     gDPSetRenderMode(gDisplayListHead++, G_RM_AA_ZB_OPA_SURF, G_RM_AA_ZB_OPA_SURF2);
     // d_course_koopa_troopa_beach_packed_dl_9688
     gSPDisplayList(gDisplayListHead++, (Gfx*) d_course_koopa_troopa_beach_packed_dl_9688);
-    render_track_sections((const char**)d_course_koopa_troopa_beach_dl_list1, arg0);
+    render_track_sections((const char**)d_course_koopa_troopa_beach_dl_list1, arg0, sizeof(d_course_koopa_troopa_beach_dl_list1) / sizeof(d_course_koopa_troopa_beach_dl_list1[0]));
     gSPClearGeometryMode(gDisplayListHead++, G_CULL_BACK);
     gDPSetCombineMode(gDisplayListHead++, G_CC_MODULATEIDECALA, G_CC_MODULATEIDECALA);
     gDPSetRenderMode(gDisplayListHead++, G_RM_AA_ZB_TEX_EDGE, G_RM_AA_ZB_TEX_EDGE2);
@@ -326,7 +326,7 @@ void KoopaTroopaBeach::DrawTransparency(ScreenContext* screen, uint16_t pathCoun
     gDPSetBlendMask(gDisplayListHead++, 0xFF);
     gDPSetCombineMode(gDisplayListHead++, G_CC_MODULATEIA, G_CC_MODULATEIA);
     gSPClearGeometryMode(gDisplayListHead++, G_CULL_BACK);
-    render_track_sections((const char**)koopa_troopa_beach_dls2, screen);
+    render_track_sections((const char**)koopa_troopa_beach_dls2, screen, sizeof(koopa_troopa_beach_dls2) / sizeof(koopa_troopa_beach_dls2[0]));
     gSPTexture(gDisplayListHead++, 0xFFFF, 0xFFFF, 1, 1, G_OFF);
     gSPSetGeometryMode(gDisplayListHead++, G_CULL_BACK);
     gDPSetAlphaCompare(gDisplayListHead++, G_AC_NONE);

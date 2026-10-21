@@ -274,7 +274,7 @@ void BowsersCastle::Draw(ScreenContext* arg0) {
     if (D_802B87BC > 255) {
         D_802B87BC = 0;
     }
-    render_track_sections(bowsers_castle_dls, arg0);
+    render_track_sections(bowsers_castle_dls, arg0, sizeof(bowsers_castle_dls) / sizeof(bowsers_castle_dls[0]));
 
     gDPSetCombineMode(gDisplayListHead++, G_CC_MODULATEIA, G_CC_MODULATEIA);
     gDPSetRenderMode(gDisplayListHead++, G_RM_AA_ZB_TEX_EDGE, G_RM_AA_ZB_TEX_EDGE2);

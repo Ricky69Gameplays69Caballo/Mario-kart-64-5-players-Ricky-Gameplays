@@ -601,6 +601,7 @@ u8* gKartPalettes[] = {
  * @param index First buffer index always zero.
  **/
 void load_kart_texture(Player* player, s8 playerId, s8 screenId, s8 screenId2, s8 index) {
+    gLastWheelFramesAlternate[screenId2][playerId] = kart_uses_alternate_wheel_frames(player);
     s32 temp = player->effects;
     s16 tyreSpeed = player->tyreSpeed;
     s32 wheelid = tyreSpeed >> 8;
@@ -633,6 +634,7 @@ void load_kart_texture(Player* player, s8 playerId, s8 screenId, s8 screenId2, s
 }
 
 void load_kart_texture_non_blocking(Player* player, s8 arg1, s8 arg2, s8 arg3, s8 arg4) {
+    gLastWheelFramesAlternate[arg3][arg1] = kart_uses_alternate_wheel_frames(player);
     s32 temp = player->effects;
     s16 tyreSpeed = player->tyreSpeed;
     s32 wheelid = tyreSpeed >> 8;

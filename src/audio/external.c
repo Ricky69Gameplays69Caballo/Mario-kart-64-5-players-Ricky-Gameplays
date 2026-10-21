@@ -23,6 +23,16 @@
 #include "port/LocalMultiplayer.h"
 
 static bool sExpandedItemSpinPlaying = false;
+static bool sWasDrivingAudioScene = false;
+
+static void stop_driving_sound_banks(void) {
+    // Keep character/menu feedback and music; discard only driving emitters.
+    func_800C5278(0);
+    func_800C5278(1);
+    func_800C5278(3);
+    func_800C5278(5);
+    sExpandedItemSpinPlaying = false;
+}
 
 s8 D_8018EF10;
 UnkStruct8018EF18 D_8018EF18[16];
@@ -642,6 +652,7 @@ void func_800C2474(void) {
     u8 var_v0;
 
     sExpandedItemSpinPlaying = false;
+    sWasDrivingAudioScene = false;
     D_8018EF10 = 0;
     for (var_v0 = 0; var_v0 < MAX_HUMAN_PLAYERS; ++var_v0) gCopyCamera[var_v0] = &cameras[var_v0];
     D_8018FB91 = 0;
@@ -3024,6 +3035,22 @@ void func_800C8CCC() {
     const u8 humans = LocalMP_IsActive() ? LocalMP_Count() : D_800EA1C0 + 1;
 
     update_expanded_item_spin();
+    // Audio runs on menu frames too. Racer structs may still contain throttle,
+    // speed and tyre state from the title demo or a previous race, and must not
+    // feed engine emitters while the front end is visible.
+    if (gGamestate != RACING && gGamestate != ENDING && gGamestate != CREDITS_SEQUENCE) {
+        if (sWasDrivingAudioScene) stop_driving_sound_banks();
+        sWasDrivingAudioScene = false;
+        return;
+    }
+    sWasDrivingAudioScene = true;
+    if (LocalMP_IsActive() && gGamestate == RACING && gRaceState == RACE_FINISHED) {
+        // Physics is frozen behind the ranking screen. Do not keep refreshing
+        // engine, tyre, terrain or course emitters from their last race state.
+        // Finish voices still advance once on their own timers.
+        for (var_s0 = 0; var_s0 < humans; ++var_s0) func_800C76C0(var_s0);
+        return;
+    }
     // The engine's channel-budget index stays in its native 0-3 range. The
     // per-player state/notification dispatch must cover all human controller slots.
     for (var_s0 = 0; var_s0 < humans; var_s0++) {
@@ -3468,6 +3495,15 @@ void func_800CA0CC() {
 void func_800CA0E4(void) {
     func_800C5278(3);
     func_800C5278(5);
+}
+
+void Audio_StopExpandedRaceSounds(void) {
+    // Native completion sets this after all humans finish. Expanded races defer
+    // completion themselves and must perform the same global audio transition.
+    D_800EA0F0 = 1;
+    // Also stop held item/tyre/boost loops. Keep character voices (bank 2),
+    // menu feedback (bank 4) and the separate music sequence players intact.
+    stop_driving_sound_banks();
 }
 
 void func_800CA118(u8 arg0) {

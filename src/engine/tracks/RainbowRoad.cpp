@@ -200,7 +200,7 @@ void RainbowRoad::Waypoints(Player* player, int8_t playerId) {
 void RainbowRoad::DrawTransparency(ScreenContext* screen, uint16_t pathCounter, uint16_t cameraRot, uint16_t playerDirection) {
     gDPPipeSync(gDisplayListHead++);
     gSPClearGeometryMode(gDisplayListHead++, G_CULL_BACK);
-    render_track_sections(rainbow_road_dls, screen);
+    render_track_sections(rainbow_road_dls, screen, sizeof(rainbow_road_dls) / sizeof(rainbow_road_dls[0]));
     gSPSetGeometryMode(gDisplayListHead++, G_CULL_BACK);
     gDPSetAlphaCompare(gDisplayListHead++, G_AC_NONE);
     gDPPipeSync(gDisplayListHead++);

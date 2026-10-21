@@ -253,7 +253,7 @@ void KalimariDesert::Draw(ScreenContext* arg0) {
 
     gDPSetCombineMode(gDisplayListHead++, G_CC_MODULATEI, G_CC_MODULATEI);
     gDPSetRenderMode(gDisplayListHead++, G_RM_AA_ZB_OPA_SURF, G_RM_AA_ZB_OPA_SURF2);
-    render_track_sections(kalimari_desert_dls, arg0);
+    render_track_sections(kalimari_desert_dls, arg0, sizeof(kalimari_desert_dls) / sizeof(kalimari_desert_dls[0]));
     // d_course_kalimari_desert_packed_dl_1ED8
     gSPDisplayList(gDisplayListHead++, (Gfx*) d_course_kalimari_desert_packed_dl_1ED8);
     // d_course_kalimari_desert_packed_dl_1B18

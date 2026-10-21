@@ -1047,7 +1047,8 @@ void func_8001EA0C(Camera* camera, Player* player, s8 arg2) {
 }
 
 void func_8001EE98(Player* player, Camera* camera, s8 index) {
-    if (LocalMP_IsActive() && LocalMP_IsFinished(camera->playerId)) return;
+    if (LocalMP_IsActive() && LocalMP_IsFinished(camera->playerId) &&
+        !LocalMP_CanCoastAfterFinish(camera->playerId)) return;
     s32 cameraIndex = camera->cameraId;
 
     switch (gModeSelection) {

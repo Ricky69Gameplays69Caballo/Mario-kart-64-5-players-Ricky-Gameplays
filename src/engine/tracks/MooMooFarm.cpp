@@ -272,7 +272,7 @@ void MooMooFarm::Draw(ScreenContext* arg0) {
     gSPDisplayList(gDisplayListHead++, (Gfx*) d_course_moo_moo_farm_packed_dl_5640);
     gSPFogPosition(gDisplayListHead++, gFogMin, gFogMax);
 
-    render_track_sections(moo_moo_farm_dls, arg0);
+    render_track_sections(moo_moo_farm_dls, arg0, sizeof(moo_moo_farm_dls) / sizeof(moo_moo_farm_dls[0]));
 
     if ((temp_s0 < 14) && (temp_s0 > 10)) {
         if ((temp_s1 == 2) || (temp_s1 == 3) || (temp_s1 == 1)) {

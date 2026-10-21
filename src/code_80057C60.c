@@ -1318,7 +1318,7 @@ void func_8005A3C0(void) {
     // Expanded views own separate C-right map/progress selections. Do not also
     // toggle the legacy shared four-player HUD from controller ports 1-4.
     if (LocalMP_IsActive() && LocalMP_Count() > 1 &&
-        (LocalMP_Count() > 4 || LocalMP_RacerCount() > NUM_PLAYERS)) return;
+        (LocalMP_Count() == 3 || LocalMP_Count() > 4 || LocalMP_RacerCount() > NUM_PLAYERS)) return;
     bool b = false;
     if ((gGamestate != ENDING) && (gGamestate != CREDITS_SEQUENCE) && !D_8018D204) {
         switch (gPlayerCountSelection1) {

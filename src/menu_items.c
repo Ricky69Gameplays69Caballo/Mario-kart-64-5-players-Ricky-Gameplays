@@ -14,6 +14,7 @@
 #include "code_80005FD0.h"
 #include "code_8006E9C0.h"
 #include "menus.h"
+static void draw_native_shared_character_tags(void);
 #include "racing/memory.h"
 #include "save.h"
 #include "code_80057C60.h"
@@ -2608,6 +2609,8 @@ void func_80094A64(UNUSED struct GfxPool* pool) {
         case COURSE_SELECT_MENU:
             handle_menus_default();
             if (!LocalMP_GameMenuIsOpen()) func_80099AEC();
+            if (gMenuSelection == CHARACTER_SELECT_MENU && !LocalMP_GameMenuIsOpen())
+                draw_native_shared_character_tags();
             break;
     }
 
@@ -4656,6 +4659,24 @@ static void draw_shared_character_player_tag(s32 x, s32 y, s32 player, bool conf
     if (confirmed) gDisplayListHead=draw_box_fill(gDisplayListHead,x+12,y+1,x+12,y+8,255,255,255,255);
 }
 
+static void draw_native_shared_character_tags(void) {
+    for (s32 grid = 1; grid <= 8; ++grid) {
+        s32 owners[4];
+        s32 count = 0;
+        for (s32 player = 0; player < 4; ++player) {
+            if (gCharacterGridSelections[player] == grid) owners[count++] = player;
+        }
+        if (count < 2) continue;
+        MenuItem* portrait = get_menu_item_character(grid - 1);
+        if (portrait == NULL) continue;
+        for (s32 tag = 0; tag < count; ++tag) {
+            const s32 player = owners[tag];
+            draw_shared_character_player_tag(portrait->column + 3 + tag * 14,
+                portrait->row + 24, player, gCharacterGridIsSelected[player]);
+        }
+    }
+}
+
 void draw_expanded_character_select(const s32* characters, const u8* ready, s32 count, s32 allReady) {
     if (!sExpandedCharacterPortraitsLoaded) {
         s32 freeSlots = 0;
@@ -4773,7 +4794,7 @@ void draw_expanded_race_results(const ExpandedRaceResultRow* rows, s32 count, s3
     }
     set_text_color(TEXT_YELLOW);
     if (estimated && !standings)
-        print_text1_center_mode_1(160, 186, "* CPU TIMES ESTIMATED", 0, 0.32f, 0.32f);
+        print_text1_center_mode_1(160, 186, "* TIME ESTIMATED", 0, 0.32f, 0.32f);
     const char* next = mode == 0 ? (standings ? (cupComplete ? "VIEW CEREMONY" : "NEXT RACE") :
                                  "DRIVER'S POINTS") : "RETRY";
     text_rainbow_effect(choice, 0, TEXT_GREEN);
@@ -6352,18 +6373,24 @@ void func_8009E2F0(s32 arg0) {
             temp_t0 = &D_8018E810[arg0];
         }
         temp_v0 = &D_800E7AC8[temp_t7];
-        if ((u32) D_8018E840[arg0] < 0x1BU) {
-            gDisplayListHead =
-                draw_box_fill_wide(gDisplayListHead, temp_t1->x - (temp_t0->x / 2), temp_t1->y - (temp_t0->y / 2),
-                                   temp_t1->x + (temp_t0->x / 2), temp_t1->y + (temp_t0->y / 2), temp_v0->red,
-                                   temp_v0->green, temp_v0->blue, temp_v0->alpha);
-        } else {
+        u32 flashAlpha = temp_v0->alpha;
+        if ((u32) D_8018E840[arg0] >= 0x1BU) {
             temp_t7_2 = ((u32) (38 - D_8018E840[arg0])) / 11.0;
-            gDisplayListHead =
-                draw_box_fill_wide(gDisplayListHead, temp_t1->x - (temp_t0->x / 2), temp_t1->y - (temp_t0->y / 2),
-                                   temp_t1->x + (temp_t0->x / 2), temp_t1->y + (temp_t0->y / 2), temp_v0->red,
-                                   temp_v0->green, temp_v0->blue, (u32) (temp_v0->alpha * temp_t7_2));
+            flashAlpha = (u32) (temp_v0->alpha * temp_t7_2);
         }
+        // Fill the complete render width, clipped to this player's actual
+        // viewport. Rectangle coordinates are aspect-corrected by the renderer,
+        // whereas scissor coordinates scale with the split-screen layout.
+        // A native 4:3 rectangle cannot reliably represent both at wide ratios.
+        gSPDisplayList(gDisplayListHead++, D_02008030);
+        gDPSetScissor(gDisplayListHead++, G_SC_NON_INTERLACE,
+            temp_t1->x - temp_t0->x / 2, temp_t1->y - temp_t0->y / 2,
+            temp_t1->x + (temp_t0->x + 1) / 2, temp_t1->y + (temp_t0->y + 1) / 2);
+        const u32 flashColor = GPACK_RGBA5551(temp_v0->red, temp_v0->green, temp_v0->blue, flashAlpha);
+        gDPSetFillColor(gDisplayListHead++, (flashColor << 16) | flashColor);
+        gDPFillWideRectangle(gDisplayListHead++, OTRGetRectDimensionFromLeftEdge(0) - 1, 0,
+            OTRGetRectDimensionFromRightEdge(SCREEN_WIDTH) + 1, SCREEN_HEIGHT);
+        gSPDisplayList(gDisplayListHead++, D_02008058);
     }
     D_8018E840[arg0]++;
     if ((u32) D_8018E840[arg0] >= 0x26U) {
@@ -7135,6 +7162,14 @@ void render_menus(MenuItem* arg0) {
             case CHARACTER_SELECT_MENU_4P_CURSOR:
                 temp_a0 = arg0->type - CHARACTER_SELECT_MENU_1P_CURSOR;
                 if (gCharacterGridSelections[temp_a0]) {
+                    // Shared characters use one large cursor and a separate
+                    // numbered badge for every owner, like the expanded menu.
+                    bool firstOwner = true;
+                    for (s32 owner = 0; owner < temp_a0; ++owner) {
+                        if (gCharacterGridSelections[owner] == gCharacterGridSelections[temp_a0])
+                            firstOwner = false;
+                    }
+                    if (!firstOwner) break;
                     if (gCharacterGridIsSelected[temp_a0] == 0) {
                         temp_t2 = 0x000000FF;
                     } else {

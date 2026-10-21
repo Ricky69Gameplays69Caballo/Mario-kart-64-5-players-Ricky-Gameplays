@@ -11,6 +11,12 @@ extern "C" {
 #define CVAR_MULTIPLAYER_RACE_BOMBS "gMultiplayer.EnableRaceBombKarts"
 #define CVAR_MINIMAP_SIZE "gMultiplayer.MinimapSizePercent"
 #define CVAR_MINIMAP_TRANSPARENCY "gMultiplayer.MinimapTransparencyPercent"
+#define CVAR_AFK_BOTS "gMultiplayer.AfkBots"
+#define CVAR_AFK_SECONDS "gMultiplayer.AfkSeconds"
+void LocalMP_ResetAfk(void);
+void LocalMP_UpdateAfk(void);
+void LocalMP_RestoreAfkInput(void);
+int LocalMP_IsAfkBot(int player);
 int MultiplayerOptions_DisplayCount(void);
 #define CVAR_RACER_RENDER_DISTANCE "gMultiplayer.RacerRenderDistance"
 // Live graphics setting: available in every racing mode, independent of toggles.
@@ -40,6 +46,7 @@ void LocalMP_DrawItemWindows(void);
 int LocalMP_Count(void);
 int LocalMP_RacerCount(void);
 int LocalMP_IsFinished(int player);
+int LocalMP_CanCoastAfterFinish(int player);
 // Consume the expanded cup's slot-based ceremony result during ending setup.
 int LocalMP_CeremonyResult(int* character, int* rank);
 // Podium slots plus spectators, retained after the ceremony result is consumed.

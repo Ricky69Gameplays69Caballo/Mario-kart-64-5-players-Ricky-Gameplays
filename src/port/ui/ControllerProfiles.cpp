@@ -13,6 +13,7 @@
 #include "ship/config/ConsoleVariable.h"
 #include "ship/controller/controldeck/ControlDeck.h"
 #include "ship/controller/controldevice/controller/Controller.h"
+#include "ship/controller/physicaldevice/ConnectedPhysicalDeviceManager.h"
 
 namespace ControllerProfiles {
 namespace {
@@ -108,6 +109,7 @@ Json Capture(int port, const std::string& name) {
     auto root = context->GetConfig()->GetNestedJson();
     auto settings = root.value("CVars", Json::object()).value(controllerKey, Json::object());
     Json profile = {{"Name", name}, {"SourcePort", port}, {"Settings", Json::object()}};
+    profile["Devices"] = context->GetControlDeck()->GetConnectedPhysicalDeviceManager()->GetEnabledDeviceKeysForPort(port);
     profile["Settings"]["Port"] = settings.value("Port" + std::to_string(port + 1), Json::object());
     profile["Settings"]["Port"]["HasConfig"] = 1;
     for (const auto* category : categories) {
@@ -123,6 +125,9 @@ void Apply(const Json& profile, int port) {
     if (from < 0 || from >= 16 || !profile.at("Settings").is_object())
         throw std::runtime_error("Invalid controller profile.");
     Json incoming = profile.at("Settings");
+    // Older profiles predate device assignments: keep their current port choices.
+    const bool hasDevices = profile.contains("Devices") && profile["Devices"].is_array();
+    const auto devices = hasDevices ? profile["Devices"].get<std::vector<std::string>>() : std::vector<std::string>{};
     if (!incoming.contains("Port") || !incoming["Port"].is_object())
         throw std::runtime_error("Profile is missing its bindings.");
     RemapReferences(incoming["Port"], from, port);
@@ -159,6 +164,7 @@ void Apply(const Json& profile, int port) {
     };
     try {
         replace(incoming);
+        if (hasDevices) context->GetControlDeck()->GetConnectedPhysicalDeviceManager()->SetEnabledDeviceKeysForPort(port, devices);
     } catch (...) {
         // Restore this port if a saved profile cannot be decoded.
         VisitValues(incoming["Port"], std::string(controllerKey) + ".Port" + std::to_string(port + 1),
@@ -215,7 +221,7 @@ bool DrawForPort(uint8_t port) {
     ImGui::SameLine();
     if (ImGui::Button("Delete")) ImGui::OpenPopup("Delete profile");
     ImGui::EndDisabled();
-    ImGui::TextWrapped("Load onto any port. Profiles include bindings, sticks, rumble, gyro and LED settings.");
+    ImGui::TextWrapped("Profiles include assigned devices, bindings, sticks, rumble, gyro and LED settings. Device checkboxes are also saved automatically across restarts.");
     if (!ui.status.empty()) ImGui::TextWrapped("%s", ui.status.c_str());
     if (ImGui::BeginPopupModal("Profile name", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::TextUnformatted(ui.operation == 0 ? "Save this port's current setup as a new profile." : "Rename the selected profile.");

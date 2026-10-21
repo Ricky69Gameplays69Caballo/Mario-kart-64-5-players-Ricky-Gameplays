@@ -163,6 +163,7 @@ const union GameModePack sSoundMenuPack = { { SOUND_STEREO, SOUND_HEADPHONES, SO
  */
 void update_menus(void) {
     u16 controllerIdx;
+    bool playerCountInputHandled = false;
 
     MultiplayerOptions_UpdateMenus();
     // Lobby inputs select characters; the underlying game menu must wait.
@@ -220,6 +221,14 @@ void update_menus(void) {
                     break;
                 case MAIN_MENU_FROM_QUIT:
                 case MAIN_MENU:
+                    // A physical pad can be assigned to several ports. Treat
+                    // simultaneous player-count navigation as one cursor move.
+                    if (gMainMenuSelection == MAIN_MENU_PLAYER_SELECT &&
+                        ((gControllers[controllerIdx].buttonPressed | gControllers[controllerIdx].stickPressed) &
+                         (L_JPAD | R_JPAD))) {
+                        if (playerCountInputHandled) break;
+                        playerCountInputHandled = true;
+                    }
                     main_menu_act(&gControllers[controllerIdx], controllerIdx);
                     break;
                 case PLAYER_SELECT_MENU_FROM_QUIT:
@@ -1547,7 +1556,7 @@ GLOBAL_ASM("asm/non_matchings/menus/main_menu_act.s")
  * hovered character at grid position `gridId`
  */
 bool is_character_spot_free(s32 gridId) {
-    if (CVarGetInteger("gUniqueCharacterSelections", true) == false) {
+    if (CVarGetInteger("gUniqueCharacterSelections", false) == false) {
         return true;
     }
   
@@ -1710,7 +1719,8 @@ void player_select_menu_act(struct Controller* controller, u16 controllerIdx) {
                         savedSelection = savedSelection + 4;
                     }
                     // L800B3A30
-                    if (is_character_spot_free(savedSelection)) {
+                    if (savedSelection != gCharacterGridSelections[controllerIdx] &&
+                        is_character_spot_free(savedSelection)) {
                         gCharacterGridSelections[controllerIdx] = savedSelection;
                         play_sound2(0x49008000);
                     }

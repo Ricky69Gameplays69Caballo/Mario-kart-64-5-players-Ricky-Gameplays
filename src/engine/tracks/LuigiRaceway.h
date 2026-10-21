@@ -17,6 +17,8 @@ extern const course_texture luigi_raceway_textures[];
 
 class LuigiRaceway : public Track {
     void CopyJumbotron(s32 ulx, s32 uly, s16 portionToDraw, u16* source);
+    s32 mJumbotronFrame = -1;
+    bool mJumbotronBlank = false;
 
   public:
     // Constructor

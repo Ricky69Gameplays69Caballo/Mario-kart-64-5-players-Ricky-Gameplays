@@ -34,6 +34,7 @@ public:
     Mtx* GetLookAtMatrix();
 
 protected:
+    void KeepInFrontOfWalls();
     Mtx PerspectiveMatrix;
     Mtx LookAtMatrix;
     bool bActive;

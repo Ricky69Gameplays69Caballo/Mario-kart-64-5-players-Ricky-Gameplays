@@ -1,4 +1,5 @@
 #include <cstdint>
+#include <algorithm>
 #include <libultraship.h>
 #include <libultra/gbi.h>
 #include <vector>
@@ -273,7 +274,7 @@ void LuigiRaceway::Draw(ScreenContext* arg0) {
     gDPSetCombineMode(gDisplayListHead++, G_CC_MODULATEIA, G_CC_MODULATEIA);
     gDPSetRenderMode(gDisplayListHead++, G_RM_AA_ZB_OPA_SURF, G_RM_AA_ZB_OPA_SURF2);
 
-    render_track_sections(luigi_raceway_dls, arg0);
+    render_track_sections(luigi_raceway_dls, arg0, sizeof(luigi_raceway_dls) / sizeof(luigi_raceway_dls[0]));
 
     gDPSetCombineMode(gDisplayListHead++, G_CC_MODULATEIDECALA, G_CC_MODULATEIDECALA);
     gDPSetRenderMode(gDisplayListHead++, G_RM_AA_ZB_TEX_EDGE, G_RM_AA_ZB_TEX_EDGE2);
@@ -285,8 +286,23 @@ void LuigiRaceway::Draw(ScreenContext* arg0) {
     D_800DC5DC = 88;
     D_800DC5E0 = 72;
 
-    // Render only the first player camera onto the television billboard. Screen agnostic screens of other players).
-    if (gActiveScreenMode == SCREEN_MODE_1P) {
+    const bool singlePlayer = gActiveScreenMode == SCREEN_MODE_1P;
+    const bool liveScreen = singlePlayer || CVarGetInteger("gMultiplayer.LuigiRacewayScreen", 1);
+    if (!liveScreen) {
+        // Switching off restores the original blank multiplayer billboard,
+        // rather than leaving the most recently captured frame frozen on it.
+        if (!mJumbotronBlank) {
+            const char* tiles[] = {gTexture68272C, gTexture682928, gTexture682B24,
+                                   gTexture682D20, gTexture682F1C, gTexture683118};
+            for (const auto* tile : tiles)
+                std::fill_n((u16*) LOAD_ASSET_RAW(tile), 64 * 32, static_cast<u16>(0xFFFF));
+            mJumbotronBlank = true;
+        }
+    } else if (singlePlayer || mJumbotronFrame != gGlobalTimer || mJumbotronBlank) {
+        // All multiplayer views share these six textures. Refresh once per
+        // game frame, not once for each of up to sixteen player viewports.
+        mJumbotronFrame = gGlobalTimer;
+        mJumbotronBlank = false;
 
         prevFrame = (s16) sRenderedFramebuffer - 1;
 

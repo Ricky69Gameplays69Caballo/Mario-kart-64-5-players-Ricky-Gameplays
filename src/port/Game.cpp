@@ -54,6 +54,7 @@ extern "C" {
 #include "audio/load.h"
 #include "audio/external.h"
 #include "racing/render_courses.h"
+#include "racing/collision.h"
 #include "menus.h"
 #include "update_objects.h"
 #include "spawn_players.h"
@@ -103,6 +104,15 @@ void DiagnosticSnapshot(char* buffer, size_t capacity) {
                    racer.oldPos[0], racer.oldPos[1], racer.oldPos[2],
                    static_cast<unsigned>(racer.lakituProps), static_cast<unsigned>(racer.kartProps),
                    racer.driftDuration, racer.surfaceType);
+            if (player < humans && gScreenContexts[player].camera) {
+                const auto& camera = *gScreenContexts[player].camera;
+                append(" camera=(%.2f,%.2f,%.2f) lookAt=(%.2f,%.2f,%.2f) mode=%d flags=%04x section=%d playerSection=%d drawSection=%d floorDist=%.2f walls=(%.2f,%.2f)\n",
+                    camera.pos[0], camera.pos[1], camera.pos[2], camera.lookAt[0], camera.lookAt[1], camera.lookAt[2],
+                    camera.mode, static_cast<unsigned>(camera.someBitFlags),
+                    get_track_section_id(camera.collision.meshIndexZX), get_track_section_id(racer.collision.meshIndexZX),
+                    gScreenContexts[player].pathCounter, camera.collision.surfaceDistance[2],
+                    camera.collision.surfaceDistance[0], camera.collision.surfaceDistance[1]);
+            }
         }
     }
 }
@@ -130,7 +140,7 @@ LONG WINAPI DiagnosticCrashFilter(EXCEPTION_POINTERS* exception) {
     HANDLE report = CreateFileW((prefix + L".txt").c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr,
                                 CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (report != INVALID_HANDLE_VALUE) {
-        char text[8192] = {};
+        char text[16384] = {};
         int size = snprintf(text, sizeof(text),
             "Combined Windows crash\nUTC %04u-%02u-%02u %02u:%02u:%02u\nexception=0x%08lx address=%p thread=%lu dump=%s error=%lu\n",
             time.wYear, time.wMonth, time.wDay, time.wHour, time.wMinute, time.wSecond,
@@ -195,7 +205,7 @@ void TickCrashDiagnostics() {
     lastRace = gRaceState;
     lastCourse = gCurrentCourseId;
     lastWrite = now;
-    char snapshot[8192] = {};
+    char snapshot[16384] = {};
     DiagnosticSnapshot(snapshot, sizeof(snapshot));
     sDiagnostics->info("{}", snapshot);
 }

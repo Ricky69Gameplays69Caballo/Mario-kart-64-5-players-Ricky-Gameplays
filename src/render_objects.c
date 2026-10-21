@@ -2422,7 +2422,8 @@ void func_8004E6C4(s32 playerId) {
         temp_v0 = &playerHUD[playerId];
         FrameInterpolation_RecordOpenChild("item_window_splitscreen", playerId);
         func_80047910(temp_v0->slideItemBoxX + temp_v0->itemBoxX, temp_v0->slideItemBoxY + temp_v0->itemBoxY, 0U,
-                      temp_v0->unknownScaling, (u8*) object->activeTLUT, (u8*) object->activeTexture, (Vtx*)LOAD_ASSET(D_0D005C30),
+                      temp_v0->unknownScaling * (LocalMP_Count() == 4 ? 0.7f : 1.0f),
+                      (u8*) object->activeTLUT, (u8*) object->activeTexture, (Vtx*)LOAD_ASSET(D_0D005C30),
                       0x00000028, 0x00000020, 0x00000028, 0x00000020);
         FrameInterpolation_RecordCloseChild();
     }
@@ -2644,14 +2645,14 @@ void render_speedometer(s32 playerIdx) {
 }
 
 static f32 minimap_size_multiplier(void) {
-    s32 percent = CVarGetInteger(CVAR_MINIMAP_SIZE, 100);
+    s32 percent = CVarGetInteger(CVAR_MINIMAP_SIZE, 85);
     if (percent < 10) percent = 10;
     if (percent > 300) percent = 300;
     return percent / 100.0f;
 }
 
 static s32 minimap_alpha(void) {
-    s32 transparency = CVarGetInteger(CVAR_MINIMAP_TRANSPARENCY, 0);
+    s32 transparency = CVarGetInteger(CVAR_MINIMAP_TRANSPARENCY, 25);
     if (transparency < 0) transparency = 0;
     if (transparency > 100) transparency = 100;
     return ((100 - transparency) * 255 + 50) / 100;
@@ -3514,6 +3515,12 @@ void func_80050E34(s32 playerId, s32 arg1) {
 }
 
 void func_800514BC(void) {
+    // The expanded C-right HUD owns the map/progress choice for these races.
+    // Native 4P HUD can still run for the item/lap indicators, but must not
+    // also draw its independent, eight-racer progress strip on top.
+    if (LocalMP_IsActive() && LocalMP_Count() > 1 &&
+        (LocalMP_Count() > 4 || LocalMP_RacerCount() > NUM_PLAYERS ||
+         MultiplayerOptions_DisplayCount() > 1)) return;
     s32 temp_a0;
     s32 var_s0;
     s32 var_s1;
